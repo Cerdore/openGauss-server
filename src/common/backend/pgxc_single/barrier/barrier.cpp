@@ -147,7 +147,7 @@ void ProcessCreateBarrierExecute(const char* id)
         rdata[0].next = NULL;
 
         recptr = XLogInsert(RM_BARRIER_ID, XLOG_BARRIER_CREATE, rdata);
-        XLogFlush(recptr);
+        XLogWaitFlush(recptr);
     }
 
     pq_beginmessage(&buf, 'b');
@@ -258,7 +258,7 @@ void DisasterRecoveryRequestBarrier(const char* id)
     XLogRegisterData((char*)id, strlen(id) + 1);
 
     recptr = XLogInsert(RM_BARRIER_ID, XLOG_BARRIER_CREATE);
-    XLogFlush(recptr);
+    XLogWaitFlush(recptr);
 
     pg_atomic_init_u64(&g_instance.archive_obs_cxt.barrierLsn, recptr);
 
@@ -587,7 +587,7 @@ static void ExecuteBarrier(const char* id)
         rdata[0].next = NULL;
 
         recptr = XLogInsert(RM_BARRIER_ID, XLOG_BARRIER_CREATE, rdata);
-        XLogFlush(recptr);
+        XLogWaitFlush(recptr);
     }
 }
 

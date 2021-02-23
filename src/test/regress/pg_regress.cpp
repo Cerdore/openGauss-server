@@ -4947,7 +4947,7 @@ static void CheckCleanCodeWarningInfo(const int baseNum, const int currentNum,
     return;
 }
 
-#define BASE_GLOBAL_VARIABLE_NUM 226
+#define BASE_GLOBAL_VARIABLE_NUM 228
 static void check_global_variables()
 {
     char* cmd =
