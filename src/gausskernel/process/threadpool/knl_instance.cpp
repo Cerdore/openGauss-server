@@ -101,6 +101,27 @@ static void knl_g_ckpt_init(knl_g_ckpt_context* ckpt_cxt)
     SpinLockInit(&(ckpt_cxt->queue_lock));
 }
 
+static void knl_g_wal_init(knl_g_wal_context *wal_cxt)
+{
+    wal_cxt->walInsertStatusTable = NULL;
+    wal_cxt->walFlushWaitLock = NULL;
+    wal_cxt->walBufferInitWaitLock = NULL;
+    wal_cxt->walInitSegLock = NULL;
+    wal_cxt->isWalWriterUp = false;
+    wal_cxt->flushResult = InvalidXLogRecPtr;
+    wal_cxt->sentResult = InvalidXLogRecPtr;
+    wal_cxt->flushResultMutex = PTHREAD_MUTEX_INITIALIZER;
+    wal_cxt->flushResultCV = (pthread_cond_t)PTHREAD_COND_INITIALIZER;
+    wal_cxt->XLogFlusherCPU = 0;
+    wal_cxt->isWalWriterSleeping = false;
+    wal_cxt->criticalEntryMutex = PTHREAD_MUTEX_INITIALIZER;
+    wal_cxt->criticalEntryCV = (pthread_cond_t)PTHREAD_COND_INITIALIZER;
+    wal_cxt->globalEndPosSegNo = InvalidXLogSegPtr;
+    wal_cxt->walWaitFlushCount = 0;
+    wal_cxt->lastWalStatusEntryFlushed = -1;
+    wal_cxt->lastLRCScanned = WAL_SCANNED_LRC_INIT;
+}
+
 static void knl_g_bgwriter_init(knl_g_bgwriter_context *bgwriter_cxt)
 {
     Assert(bgwriter_cxt != NULL);
@@ -505,6 +526,7 @@ void knl_instance_init()
     knl_g_xlog_init(&g_instance.xlog_cxt);
     knl_g_compaction_init(&g_instance.ts_compaction_cxt);
     knl_g_numa_init(&g_instance.numa_cxt);
+    knl_g_wal_init(&g_instance.wal_cxt);
 
 #ifdef ENABLE_MOT
     knl_g_mot_init(&g_instance.mot_cxt);
