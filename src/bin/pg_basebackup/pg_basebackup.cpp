@@ -1936,7 +1936,7 @@ static int GsBaseBackup(int argc, char** argv)
                 }
                 baseBackupTimeout = xstrdup(optarg);
                 break;
-                }
+            }
 	    case 'x':
                 streamwal = false;
                 break;
