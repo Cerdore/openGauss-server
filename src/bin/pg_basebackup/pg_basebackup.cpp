@@ -205,6 +205,8 @@ static void usage(void)
     printf(_("  -F, --format=p|t       output format (plain (default), tar)\n"));
     printf(_("  -T, --tablespace-mapping=OLDDIR=NEWDIR\n"
              "                         relocate tablespace in OLDDIR to NEWDIR\n"));
+    printf(_("  -t, --rw_timeout=TIME  rw_timeout limit\n"
+             "                         the value range from 60 to 3600 (s) (default 120s)\n"));
     printf(_("  -x, --xlog             include required WAL files in backup (fetch mode)\n"));
     printf(_("  -X, --xlog-method=fetch|stream\n"
              "                         include required WAL files with specified method\n"));
@@ -1855,7 +1857,8 @@ static int GsBaseBackup(int argc, char** argv)
                                            {"format", required_argument, NULL, 'F'},
                                            {"checkpoint", required_argument, NULL, 'c'},
                                            {"tablespace-mapping", required_argument, NULL, 'T'},
-                                           {"xlog", no_argument, NULL, 'x'},
+                                           {"rw_timeout", required_argument, NULL, 't'},
+					   {"xlog", no_argument, NULL, 'x'},
                                            {"xlog-method", required_argument, NULL, 'X'},
                                            {"gzip", no_argument, NULL, 'z'},
                                            {"compress", required_argument, NULL, 'Z'},
@@ -1884,7 +1887,7 @@ static int GsBaseBackup(int argc, char** argv)
         }
     }
 
-    while ((c = getopt_long(argc, argv, "D:l:c:h:p:U:s:X:F:T:Z:wWvPxz", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "D:l:c:h:p:U:s:X:F:T:t:Z:wWvPxz", long_options, &option_index)) != -1) {
         switch (c) {
             case 'D': {
                 GS_FREE(basedir);
@@ -1918,7 +1921,23 @@ static int GsBaseBackup(int argc, char** argv)
                 }
                 tablespace_list_append(optarg);
                 break;
-            case 'x':
+            case 't': {
+                /* set length limit for preventing para out of int range */
+                if (strspn(optarg, "0123456789") != strlen(optarg) || strlen(optarg) > 4) {
+                    fprintf(stderr, _("%s: invalid value:%s\n"), progname, optarg);
+                    exit(1);
+                }
+                int baseBackupPara = atoi(optarg);
+                
+                /* the timeout range is between 1min and 60mins */
+                if (baseBackupPara < 60 || baseBackupPara > 3600) {	
+                    fprintf(stderr, _("%s: invalid value:%s\n"), progname, optarg);
+                    exit(1);
+                }
+                baseBackupTimeout = xstrdup(optarg);
+                break;
+            }
+	    case 'x':
                 streamwal = false;
                 break;
             case 'X':
@@ -2067,7 +2086,7 @@ static int GsBaseBackup(int argc, char** argv)
 
     free_basebackup();
 
-    fprintf(stderr, _("%s: base backup  successfully\n"), progname);
+    fprintf(stderr, _("%s: base backup successfully\n"), progname);
 
     return 0;
 }
