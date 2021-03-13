@@ -1209,14 +1209,8 @@ do_gucset(const char *action_type, const char *data_dir)
                  * which means maintain the configuration parameter, and
                  * there will be prompts telling the user to assign a value.
                  */
-                //line is commented
-                if (isOptLineCommented(optconf_line)) {
-                    rc = strncpy_s(newconf_line, MAX_PARAM_LEN*2, optconf_line, (size_t)Min(line_len, MAX_PARAM_LEN*2 - 1));
-                    securec_check_c(rc, "\0", "\0");
-                } else {
-                    write_stderr(_("ERROR: %s parameters value is expected\n"), config_param[i]);
-                    return FAILURE;
-                }
+                write_stderr(_("ERROR: %s parameters value is expected\n"), config_param[i]);
+                return FAILURE;
             }
             updateoradd = UPDATE_PARAMETER;
         } else {
