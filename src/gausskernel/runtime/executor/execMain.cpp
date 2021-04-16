@@ -25,6 +25,13 @@
  * 	ExecutorFinish must be called after the final ExecutorRun call and
  * 	before ExecutorEnd.  This can be omitted only in case of EXPLAIN,
  * 	which should also omit ExecutorRun.
+ * 
+ * 这四个过程是执行程序的外部接口。
+ * 在每种情况下，查询描述符都需要作为参数。
+ * ExecutorStart必须在任何*查询计划的开始执行时调用，ExecutorEnd必须总是在计划的*执行结束时调用(除非它由于错误而中止)。
+ * ExecutorRun接受direction和count参数，指定计划是向前执行，向后执行，以及执行多少个元组。
+ * 在某些情况下，ExecutorRun可能会被多次调用来处理一个计划的所有元组。在没有执行整个计划时停止也是可以接受的(但仅当它是一个SELECT时)。
+ * ExecutorFinish 必须在最终的execuorrun调用之后调用，在ExecutorEnd调用之前调用。这只能在EXPLAIN，的情况下被省略，它也应该省略ExecutorRun。
  *
  * Portions Copyright (c) 2020 Huawei Technologies Co.,Ltd.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
@@ -442,6 +449,7 @@ void standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
  *
  * ----------------------------------------------------------------
  */
+/* 执行器运行 */
 void ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count)
 {
     /* sql active feature, opeartor history statistics */
@@ -483,7 +491,7 @@ void ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count)
         (has_track_operator || (IS_PGXC_DATANODE && queryDesc->instrument_options))) {
         can_operator_history_statistics = true;
     }
-
+    
     if (can_operator_history_statistics) {
         ExplainNodeFinish(queryDesc->planstate, NULL, (TimestampTz)0.0, true);
     }
@@ -502,6 +510,7 @@ void ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count)
     }
 
     /* SQL Self-Tuning : Analyze query plan issues based on runtime info when query execution is finished */
+    /* SQL 自调优: 查询执行完毕时，基于运行时信息分析查询计划问题 */
     if (u_sess->exec_cxt.need_track_resource && queryDesc != NULL && has_track_operator &&
         (IS_PGXC_COORDINATOR || IS_SINGLE_NODE)) {
         List *issue_results = PlanAnalyzerOperator(queryDesc, queryDesc->planstate);
@@ -515,6 +524,7 @@ void ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count)
     instr_stmt_report_query_plan(queryDesc);
 
     /* sql active feature, opeartor history statistics */
+    /* 查询动态特征, 操作符历史统计信息 */
     if (can_operator_history_statistics) {
         u_sess->instr_cxt.can_record_to_table = true;
         ExplainNodeFinish(queryDesc->planstate, queryDesc->plannedstmt, GetCurrentTimestamp(), false);

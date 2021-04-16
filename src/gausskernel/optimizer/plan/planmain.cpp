@@ -91,6 +91,20 @@ static void debug_print_log(PlannerInfo* root, Path* sortedpath, int debug_log_l
  * therefore not redundant with limit_tuples.  We use limit_tuples to determine
  * whether a bounded sort can be used at runtime.
  */
+
+/* 
+*优化器主函数 
+*生成基本查询的路径（最简化的查询计划）
+*输入参数：
+*root：描述需要计划的查询
+*tlist: 查询生成的目标列表
+*tuple_fraction: 被抽取的元组数量比例
+*limit_tuples: 抽取元组数量的数量限制
+*输出参数:
+*cheapest_path: 查询整体上代价最低的路径
+*sorted_path: 排好序的代价最低的数个路径
+*num_groups: 估计组的数量（返回1如果查询不使用group运算）
+*/
 void query_planner(PlannerInfo* root, List* tlist, double tuple_fraction, double limit_tuples, Path** cheapest_path,
     Path** sorted_path, double* num_groups, List* rollup_groupclauses, List* rollup_lists)
 {
