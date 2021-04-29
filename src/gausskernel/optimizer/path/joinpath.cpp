@@ -125,6 +125,16 @@ void add_paths_to_joinrel(PlannerInfo* root, RelOptInfo* joinrel, RelOptInfo* ou
     SemiAntiJoinFactors semifactors;
     Relids param_source_rels = NULL;
     ListCell* lc = NULL;
+
+    int onGPU = 0;//CHANGEME
+    foreach(lc,root->rowMarks){
+		PlanRowMark *rc = (PlanRowMark*) lfirst(lc);
+		if(rc->markType == ROW_MARK_GPU){
+			onGPU = 1;
+			break;
+		}
+	}
+
     List *mergejoin_hint = u_sess->attr.attr_sql.enable_mergejoin
                                 ? NIL
                                 : find_specific_join_hint(
@@ -262,7 +272,7 @@ void add_paths_to_joinrel(PlannerInfo* root, RelOptInfo* joinrel, RelOptInfo* ou
      * 1. Consider mergejoin paths where both relations must be explicitly
      * sorted.	Skip this if we can't mergejoin.
      */
-    if (mergejoin_allowed)
+    if (mergejoin_allowed && !onGPU)//CHANGEME
         sort_inner_and_outer(
             root, joinrel, outerrel, innerrel, restrictlist, mergeclause_list, jointype, sjinfo, param_source_rels);
 
@@ -316,7 +326,7 @@ void add_paths_to_joinrel(PlannerInfo* root, RelOptInfo* joinrel, RelOptInfo* ou
      * before being joined.  As above, disregard enable_hashjoin for full
      * joins, because there may be no other alternative.
      */
-    if (u_sess->attr.attr_sql.enable_hashjoin || jointype == JOIN_FULL || hashjoin_hint != NIL)
+    if ((u_sess->attr.attr_sql.enable_hashjoin || jointype == JOIN_FULL || hashjoin_hint != NIL)&& !onGPU)//CHANGEME
         hash_inner_and_outer(
             root, joinrel, outerrel, innerrel, restrictlist, jointype, sjinfo, &semifactors, param_source_rels);
 

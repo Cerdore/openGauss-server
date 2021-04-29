@@ -560,6 +560,12 @@ void standard_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long co
      */
     old_context = MemoryContextSwitchTo(estate->es_query_cxt);
 
+    //CHANGEME
+    if(queryDesc->onGPU == ONGPU){
+		gpuExec(queryDesc);
+		return;
+	}
+
     /*
      * Generate machine code for this query.
      */
@@ -801,7 +807,13 @@ void standard_ExecutorEnd(QueryDesc *queryDesc)
      * everything the executor has allocated.
      */
     FreeExecutorState(estate);
-
+    
+    //CHANGEME
+    /* Reset queryDesc fields that no longer point to anything */
+	if(queryDesc->onGPU == ONGPU){
+		gpuStop(queryDesc->context);
+		queryDesc->context = NULL;
+	}
     /* Reset queryDesc fields that no longer point to anything */
     queryDesc->tupDesc = NULL;
     queryDesc->estate = NULL;
@@ -1254,6 +1266,8 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
      * Similarly, we have to lock relations selected FOR UPDATE/FOR SHARE
      * before we initialize the plan tree, else we'd be risking lock upgrades.
      * While we are at it, build the ExecRowMark list.
+     * 类似地，在初始化计划树之前，我们必须锁定为 UPDATE/FOR SHARE 选择的关系，否则就会冒着锁升级的风险。
+     * 当我们在这里的时候，构建 ExecRowMark 列表。
      */
     estate->es_rowMarks = NIL;
     uint64 plan_start_time = time(NULL);
@@ -1281,6 +1295,16 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
                     relation = heap_open(relid, RowShareLock);
                 }
                 break;
+            case ROW_MARK_KEYSHARE://CHANGEME: should keep it? 
+				relid = getrelid(rc->rti, rangeTable);
+				relation = heap_open(relid, RowShareLock);
+				break;
+            case ROW_MARK_GPU://CHANGEME
+				relid = getrelid(rc->rti, rangeTable);
+				relation = heap_open(relid, RowShareLock);
+				queryDesc->onGPU = ONGPU;
+				queryDesc->context = (struct clContext *)palloc(sizeof(struct clContext)); 
+				break;
             case ROW_MARK_REFERENCE:
                 if (IS_PGXC_COORDINATOR || u_sess->pgxc_cxt.PGXCNodeId < 0 ||
                     bms_is_member(u_sess->pgxc_cxt.PGXCNodeId, rc->bms_nodeids)) {
@@ -1506,6 +1530,11 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
     queryDesc->tupDesc = tupType;
     queryDesc->planstate = planstate;
 
+    //CHANGEME
+    if(queryDesc->onGPU == ONGPU)
+		gpuStart(queryDesc);
+
+
     if (plannedstmt->num_streams > 0 && !StreamThreadAmI() &&
         !(eflags & EXEC_FLAG_EXPLAIN_ONLY)) {
         /* init stream thread in parallel */
@@ -1513,6 +1542,10 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
     }
 
     gstrace_exit(GS_TRC_ID_InitPlan);
+
+
+
+    
 }
 
 /*

@@ -75,6 +75,9 @@
 #include <arpa/inet.h>
 #include <sys/resource.h>
 
+
+#include <sched.h> //CHANGEME: 加这个干嘛？
+
 #ifdef HAVE_POLL_H
 #include <poll.h>
 #endif
@@ -238,6 +241,11 @@
 #define static
 #endif
 
+/* //CHANGEME: 
+ * 
+ */
+
+int numcpu, currentcpu;
 
 extern void auto_explain_init(void);
 extern int S3_init();
@@ -1378,7 +1386,7 @@ int PostmasterMain(int argc, char* argv[])
      * for example single_node mode,
      * so need this function to init postmaster level guc.
      */
-    InitializePostmasterGUC();
+    InitializePostmasterGUC();  /*  初始化postmaster配置参数*/
 
     t_thrd.myLogicTid = noProcLogicTid + POSTMASTER_LID;
     if (output_config_variable != NULL) {
@@ -1487,7 +1495,7 @@ int PostmasterMain(int argc, char* argv[])
         CreateDataDirLockFile(true);
 
         /* Module load callback */
-        pgaudit_agent_init();
+        pgaudit_agent_init();         /*  初始化审计模块*/
         auto_explain_init();
 
         /*
@@ -1498,7 +1506,7 @@ int PostmasterMain(int argc, char* argv[])
         /*
          * Establish input sockets.
          */
-        for (i = 0; i < MAXLISTEN; i++)
+        for (i = 0; i < MAXLISTEN; i++)         /* 建立输入socket监听*/
             t_thrd.postmaster_cxt.ListenSocket[i] = PGINVALID_SOCKET;
 
         if (g_instance.attr.attr_network.ListenAddresses && !dummyStandbyMode) {
@@ -1792,8 +1800,9 @@ int PostmasterMain(int argc, char* argv[])
 
         /*
          * Set up shared memory and semaphores.
+         * 
          */
-        reset_shared(g_instance.attr.attr_network.PostPortNumber);
+        reset_shared(g_instance.attr.attr_network.PostPortNumber);  /*  建立共享内存和信号量池*/
 
         /* Alloc array for backend record. */
         BackendArrayAllocation();
@@ -2116,6 +2125,11 @@ int PostmasterMain(int argc, char* argv[])
 
     load_searchserver_library();
 #endif
+
+    //CHANGEME
+	numcpu = sysconf(_SC_NPROCESSORS_ONLN);
+	currentcpu = 0;    
+
 
     if (status == STATUS_OK)
         status = ServerLoop();

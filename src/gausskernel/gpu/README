@@ -1,0 +1,133 @@
+Integration of GPU into Postgres.
+
+Some notes on current implementation (will be updated based on the process):
+1. To let query execute on OpenCL supported devices, query need to be written with special keywords.
+2. Query parser and optimizer are mostly unaware of the existing of OpenCL devices.
+
+3. Currently only scan operation is supported. Other operations will be supported later.
+4. For each query that will be executed on GPU, we will create a OpenCL context.
+    (Alternative choice: we can also create on OpenCL context for each postgres process)
+5. OpenCL memory management:
+    1) total memory size
+    For each query, we will allocate a special memory space to accomodate all the query needed data before
+    transferred to GPU. Currently the size of the allocated memory for each query equals to the total size
+    of data needed by the query (very inefficient).
+    2) how to allocate memory
+    Memory are allocated using CL_MEM_ALLOC_HOST_PTR. The place where the memory are allocated depends on
+    OpenCL driver implementation (Intel and AMD in pinned host memory, Nvidia in GPU device memory).
+    3) when to release
+    all the opencl allocated memory will be released when query ends(ExecutorEnd())
+    each node will try to release its child's allocated opencl memory after its execution.
+
+6. We first assume that the output of a query only consists of simple attributes. Complex expressions will be supported later.
+    the following postgresql expression type is supported:
+        1) T_OpExpr, such as, id+1, where id is the name of a column.
+        2) T_Var, a simple column as an expression.
+        3) T_Const, a const value in an expression.
+        4) T_Aggref, agggreation expression.
+        5) T_TargetEntry, a target in the target list
+
+7. where condition:
+    currently we only consider simple expressions connected by "and" "or"
+    funcExpr is not supported.
+    variable length data is not handled yet (backend/utils/adt/datum.c).
+
+8. Some query features are not supported yet. This includes:
+    subquery, having clause, limit clause, common table expression,
+    NULL attrs, toasted tuples
+
+    for join and scan, currently we don't support expression in the output list.
+    we only support foreign-key join
+
+9. supported type:
+    fixed length data:
+        int4
+        time stamp without time zone
+        BpChar, with a fixed length of header
+
+   variable length data: 
+        varchar
+        numeric : numeric data is stored in Numeric format.
+
+10. opencl compilation.
+    current we manually copy the needed kernel header to the include dir. We will change later.
+
+11. integrate GPUDB.
+    1) gpudb's type and optype(eq,leq...) need to be adjusted.
+
+There may be duplicated codes in the current implementation. we will keep refining the codes all the time.
+
+Modified files:
+Optimizer (only generating seq scan plan for regular table node):
+    src/backend/optimizer/path/allpaths.c: set_plain_rel_pathlist()
+    src/backend/optimizer/prep/joinpath.c: all_path_to_joinrel: when processing join on GPU, only generate nest loop plan. 
+    src/backend/executor/execMain.c: ExecutorStart(), ExecutorRun(): setup OpenCL context, offload to GPU
+    (Alternative choice: src/backend/tcop/postgres.c: PostgresMain: setup OpenCL context and intialize query description with it)
+    src/backend/utils/cache/lsysca*.c: get_relnatts(): remove #ifdef to make the function visible
+    src/backend/postmaster/postmaster.c: add support for process affinity
+
+
+
+GPU 与 Postgres 的整合。
+
+关于当前实施的一些说明(将根据流程更新) :
+
+1. 为了让查询在 OpenCL 支持的设备上执行，需要使用特殊的关键字来编写查询。
+
+2. 查询解析器和优化器大多不知道 OpenCL 设备的存在。
+
+3. 目前只支持扫描操作。稍后将支持其他操作。
+
+4. 对于每个将在 GPU 上执行的查询，我们将创建一个 OpenCL 上下文。
+
+(替代选择: 我们也可以为每个 postgres 进程创建 OpenCL 上下文)
+5. OpenCL 内存管理:
+
+1)总内存大小对于每个查询，我们将分配一个特殊的内存空间，以容纳所有需要的查询数据之前传输到 GPU。当前，每个查询分配的内存大小等于查询所需的数据总大小(非常低效)。
+
+2)如何分配内存使用 CL _ mem _ alloc _ host _ ptr 分配内存。内存分配的位置取决于 OpenCL 驱动程序的实现(英特尔和 AMD 在固定主机内存中，Nvidia 在 GPU 设备内存中)。
+
+3)当查询结束时释放所有 opencl 分配的内存(executerend ()) ，每个节点将尝试在执行之后释放其子节点分配的 opencl 内存。
+
+图6。我们首先假设查询的输出只包含简单的属性。稍后将支持复杂的表达式。
+
+支持以下 postgresql 表达式类型:
+
+1) t _ opexpr，例如，id + 1，其中 id 是列的名称。
+
+2) t _ var，一个简单的表达式列。
+
+3) t _ const，表达式中的常量值。
+
+4) t _ aggref，aggreation expression.
+
+5) t _ targetentry，目标列表中的目标
+7. where condition:
+
+目前，我们只考虑由“ and”或“ funcExpr”连接的简单表达式不受支持。
+
+尚未处理可变长度数据(backend/utils/adt/datum.c)。
+
+8. 一些查询功能还不支持，包括:
+
+子查询，有子句，限制子句，公共表表达式，NULL attrs，连接和扫描的烤元组，目前我们不支持输出列表中的表达式。
+
+我们只支持外键连接
+9. 支持类型:
+
+定长数据:
+
+4time stamp without time zone BpChar，with a fixed length of header variable length data:
+
+Varchar Numeric: 数字数据以 Numeric 格式存储。
+
+10. opencl 汇编。
+
+当前，我们手动复制所需的内核头到包括目录。我们稍后将更改。
+
+11. 集成 GPUDB。
+
+1)需要调整 gpudb 的类型和 optype (eq，leq...)。
+
+在当前的实现中可能存在重复的代码。我们将一直不断地完善这些代码。
+
