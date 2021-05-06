@@ -825,7 +825,7 @@ List* pg_parse_query(const char* query_string, List** query_string_locationlist)
  * Given a raw parsetree (gram.y output), and optionally information about
  * types of parameter symbols ($n), perform parse analysis and rule rewriting.
  *
- * A list of Query nodes is returned, since either the analyzer or the
+ * A list of Query nodes is returned, since either th e analyzer or the
  * rewriter might expand one query to several.
  *
  * NOTE: for reasons mentioned above, this must be separate from raw parsing.
@@ -2138,6 +2138,8 @@ static void exec_simple_query(const char* query_string, MessageType messageType,
      * BEGIN/COMMIT/ABORT statement; we have to force a new xact command after
      * one of those, else bad things will happen in xact.c. (Note that this
      * will normally change current memory context.)
+     * 启动一个事务命令。由 * query _ string 生成的所有查询都将在同一个命令块中，* 除非我们找到一个 * BEGIN/COMMIT/ABORT 语句;
+     * 我们必须在 * 之后强制执行一个新的 xact 命令，否则在 xact.c 中会发生不好的事情。(请注意，这 * 通常会改变当前的内存上下文。)
      */
     start_xact_command();
 
@@ -2182,8 +2184,8 @@ static void exec_simple_query(const char* query_string, MessageType messageType,
      */
     oldcontext = MemoryContextSwitchTo(t_thrd.mem_cxt.msg_mem_cxt);
 
-    if (HYBRID_MESSAGE == messageType) {
-        parsetree_list = pg_parse_query(sql_query_string);
+    if (HYBRID_MESSAGE == messageType) {                                                            //词法和语法分析生成语法树
+        parsetree_list = pg_parse_query(sql_query_string);                                     
     } else {
         if (copy_need_to_be_reparse != NULL && g_instance.status == NoShutdown) {
             bool reparse_query = false;
@@ -2394,7 +2396,7 @@ static void exec_simple_query(const char* query_string, MessageType messageType,
          * @hdfs
          * If we received a hybridmessage, we use sql_query_string to analyze and rewrite.
          */
-        if (HYBRID_MESSAGE != messageType)
+        if (HYBRID_MESSAGE != messageType)                                                         //语义分析和查询重写生成查询树
             querytree_list = pg_analyze_and_rewrite(parsetree, query_string, NULL, 0);
         else
             querytree_list = pg_analyze_and_rewrite(parsetree, sql_query_string, NULL, 0);
@@ -2444,7 +2446,7 @@ static void exec_simple_query(const char* query_string, MessageType messageType,
             break;
         }
 
-        plantree_list = pg_plan_queries(querytree_list, 0, NULL);
+        plantree_list = pg_plan_queries(querytree_list, 0, NULL);           //生成计划树
 
         randomPlanInfo = get_random_plan_string();
         if (was_logged != false && randomPlanInfo != NULL) {

@@ -1,0 +1,1 @@
+/home/xsdb/openGauss/openGauss-server/src/common/backend/parser/hint_gram.hpp

@@ -1550,7 +1550,7 @@ static void FillPortalStore(Portal portal, bool isTopLevel)
  *
  * One difference from ExecutorRun is that the destination receiver functions
  * are run in the caller's memory context (since we have no estate).  Watch
- * out for memory leaks.
+ * out for memory leaks.与executorun的一个区别是，目标接收器函数*在调用者的内存上下文中运行（因为我们没有属性）。小心内存泄漏。
  */
 static uint32 RunFromStore(Portal portal, ScanDirection direction, long count, DestReceiver* dest)
 {

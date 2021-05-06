@@ -1,0 +1,1 @@
+/home/xsdb/openGauss/openGauss-server/src/gausskernel/storage/lmgr/lwlocknames.h

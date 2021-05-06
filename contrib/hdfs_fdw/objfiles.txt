@@ -1,0 +1,1 @@
+contrib/hdfs_fdw/hdfs_fdw.o contrib/hdfs_fdw/scheduler.o

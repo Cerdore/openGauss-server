@@ -1,7 +1,7 @@
 /* -------------------------------------------------------------------------
  *
  * joinpath.cpp
- *	  Routines to find all possible paths for processing a set of joins
+ *	  Routines to find all possible paths for processing a set of joins 进程查找处理一组连接的所有可能路径
  *
  * Portions Copyright (c) 2020 Huawei Technologies Co.,Ltd.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
@@ -126,14 +126,14 @@ void add_paths_to_joinrel(PlannerInfo* root, RelOptInfo* joinrel, RelOptInfo* ou
     Relids param_source_rels = NULL;
     ListCell* lc = NULL;
 
-    int onGPU = 0;//CHANGEME
-    foreach(lc,root->rowMarks){
-		PlanRowMark *rc = (PlanRowMark*) lfirst(lc);
-		if(rc->markType == ROW_MARK_GPU){
-			onGPU = 1;
-			break;
-		}
-	}
+    // int onGPU = 0;//CHANGEME
+    // foreach(lc,root->rowMarks){
+	// 	PlanRowMark *rc = (PlanRowMark*) lfirst(lc);
+	// 	if(rc->markType == ROW_MARK_GPU){
+	// 		onGPU = 1;
+	// 		break;
+	// 	}
+	// }
 
     List *mergejoin_hint = u_sess->attr.attr_sql.enable_mergejoin
                                 ? NIL
@@ -197,7 +197,7 @@ void add_paths_to_joinrel(PlannerInfo* root, RelOptInfo* joinrel, RelOptInfo* ou
          * (possibly not all of it), and haven't yet joined to its LHS.  (This
          * test is pretty simplistic, but should be sufficient considering the
          * join has already been proven legal.)  If the SJ is relevant, it
-         * presents constraints for joining to anything not in its RHS.
+         * presents constraints for joining to anything not in its  RHS.
          */
         if (bms_overlap(joinrel->relids, root_sjinfo->min_righthand) &&
             !bms_overlap(joinrel->relids, root_sjinfo->min_lefthand))
@@ -272,7 +272,7 @@ void add_paths_to_joinrel(PlannerInfo* root, RelOptInfo* joinrel, RelOptInfo* ou
      * 1. Consider mergejoin paths where both relations must be explicitly
      * sorted.	Skip this if we can't mergejoin.
      */
-    if (mergejoin_allowed && !onGPU)//CHANGEME
+    if (mergejoin_allowed )//&& !onGPU)//CHANGEME
         sort_inner_and_outer(
             root, joinrel, outerrel, innerrel, restrictlist, mergeclause_list, jointype, sjinfo, param_source_rels);
 
@@ -326,7 +326,7 @@ void add_paths_to_joinrel(PlannerInfo* root, RelOptInfo* joinrel, RelOptInfo* ou
      * before being joined.  As above, disregard enable_hashjoin for full
      * joins, because there may be no other alternative.
      */
-    if ((u_sess->attr.attr_sql.enable_hashjoin || jointype == JOIN_FULL || hashjoin_hint != NIL)&& !onGPU)//CHANGEME
+    if ((u_sess->attr.attr_sql.enable_hashjoin || jointype == JOIN_FULL || hashjoin_hint != NIL))//&& !onGPU)//CHANGEME
         hash_inner_and_outer(
             root, joinrel, outerrel, innerrel, restrictlist, jointype, sjinfo, &semifactors, param_source_rels);
 

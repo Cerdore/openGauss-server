@@ -76,7 +76,7 @@
 #include <sys/resource.h>
 
 
-#include <sched.h> //CHANGEME: 加这个干嘛？
+// #include <sched.h> //CHANGEME: 加这个干嘛？
 
 #ifdef HAVE_POLL_H
 #include <poll.h>
@@ -245,7 +245,7 @@
  * 
  */
 
-int numcpu, currentcpu;
+// int numcpu, currentcpu;
 
 extern void auto_explain_init(void);
 extern int S3_init();
@@ -2127,8 +2127,8 @@ int PostmasterMain(int argc, char* argv[])
 #endif
 
     //CHANGEME
-	numcpu = sysconf(_SC_NPROCESSORS_ONLN);
-	currentcpu = 0;    
+	// numcpu = sysconf(_SC_NPROCESSORS_ONLN);
+	// currentcpu = 0;    
 
 
     if (status == STATUS_OK)
@@ -6551,6 +6551,18 @@ static int BackendStartup(Port* port, bool isConnectHaPort)
     bn->child_slot = t_thrd.proc_cxt.MyPMChildSlot = childSlot;
 
     pid = initialize_worker_thread(WORKER, port);
+
+
+
+    // if(pid >0){ //CHANGEME
+
+	// 	cpu_set_t cpuset;
+	// 	CPU_ZERO(&cpuset);
+	// 	CPU_SET(currentcpu, &cpuset);
+	// 	sched_setaffinity(pid, sizeof(cpu_set_t), &cpuset );
+	// 	currentcpu = (++currentcpu) % numcpu;
+	// }
+
     t_thrd.proc_cxt.MyPMChildSlot = 0;
     if (pid == (ThreadId)-1) {
         /* in parent, fork failed */
@@ -6565,6 +6577,8 @@ static int BackendStartup(Port* port, bool isConnectHaPort)
 
     /* in parent, successful fork */
     ereport(DEBUG2, (errmsg_internal("forked new backend, pid=%lu socket=%d", pid, (int)port->sock)));
+
+
 
     /*
      * Everything's been successful, it's safe to add this backend to our list

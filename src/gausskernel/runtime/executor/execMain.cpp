@@ -561,10 +561,10 @@ void standard_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long co
     old_context = MemoryContextSwitchTo(estate->es_query_cxt);
 
     //CHANGEME
-    if(queryDesc->onGPU == ONGPU){
-		gpuExec(queryDesc);
-		return;
-	}
+    // if(queryDesc->onGPU == ONGPU){
+	// 	gpuExec(queryDesc);
+	// 	return;
+	// }
 
     /*
      * Generate machine code for this query.
@@ -625,7 +625,7 @@ void standard_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long co
             ExecutePlan(estate, queryDesc->planstate, operation, send_tuples,
                 count, direction, dest, queryDesc->mot_jit_context);
 #else
-            ExecutePlan(estate, queryDesc->planstate, operation, send_tuples, count, direction, dest);
+            ExecutePlan(estate, queryDesc->planstate, operation, send_tuples, count, direction, dest);  //执行计划
 #endif
         }
     }
@@ -810,10 +810,11 @@ void standard_ExecutorEnd(QueryDesc *queryDesc)
     
     //CHANGEME
     /* Reset queryDesc fields that no longer point to anything */
-	if(queryDesc->onGPU == ONGPU){
-		gpuStop(queryDesc->context);
-		queryDesc->context = NULL;
-	}
+	// if(queryDesc->onGPU == ONGPU){
+	// 	gpuStop(queryDesc->context);
+	// 	queryDesc->context = NULL;
+	// }
+
     /* Reset queryDesc fields that no longer point to anything */
     queryDesc->tupDesc = NULL;
     queryDesc->estate = NULL;
@@ -1295,16 +1296,16 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
                     relation = heap_open(relid, RowShareLock);
                 }
                 break;
-            case ROW_MARK_KEYSHARE://CHANGEME: should keep it? 
-				relid = getrelid(rc->rti, rangeTable);
-				relation = heap_open(relid, RowShareLock);
-				break;
-            case ROW_MARK_GPU://CHANGEME
-				relid = getrelid(rc->rti, rangeTable);
-				relation = heap_open(relid, RowShareLock);
-				queryDesc->onGPU = ONGPU;
-				queryDesc->context = (struct clContext *)palloc(sizeof(struct clContext)); 
-				break;
+            // case ROW_MARK_KEYSHARE://CHANGEME: should keep it? 
+			// 	relid = getrelid(rc->rti, rangeTable);
+			// 	relation = heap_open(relid, RowShareLock);
+			// 	break;
+            // case ROW_MARK_GPU://CHANGEME
+			// 	relid = getrelid(rc->rti, rangeTable);
+			// 	relation = heap_open(relid, RowShareLock);
+			// 	queryDesc->onGPU = ONGPU;
+			// 	queryDesc->context = (struct clContext *)palloc(sizeof(struct clContext)); 
+			// 	break;
             case ROW_MARK_REFERENCE:
                 if (IS_PGXC_COORDINATOR || u_sess->pgxc_cxt.PGXCNodeId < 0 ||
                     bms_is_member(u_sess->pgxc_cxt.PGXCNodeId, rc->bms_nodeids)) {
@@ -1531,8 +1532,8 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
     queryDesc->planstate = planstate;
 
     //CHANGEME
-    if(queryDesc->onGPU == ONGPU)
-		gpuStart(queryDesc);
+    // if(queryDesc->onGPU == ONGPU)
+	// 	gpuStart(queryDesc);
 
 
     if (plannedstmt->num_streams > 0 && !StreamThreadAmI() &&
@@ -2086,6 +2087,8 @@ static void ExecCollectMaterialForSubplan(EState *estate)
  *
  * 		Processes the query plan until we have retrieved 'numberTuples' tuples,
  * 		moving in the specified direction.
+ *      
+ *      处理查询计划，直到检索到“numberTuples”元组，按指定方向移动。
  *
  * 		Runs to completion if numberTuples is 0
  *
@@ -2149,7 +2152,7 @@ static void ExecutePlan(EState *estate, PlanState *planstate, CmdType operation,
     bool is_saved_recursive_union_plan_nodeid = EXEC_IN_RECURSIVE_MODE(planstate->plan);
 
     /*
-     * Loop until we've processed the proper number of tuples from the plan.
+     * Loop until we've processed the proper number of tuples from the plan.  循环，直到我们处理了计划中正确数量的元组。
      */
     for (;;) {
         /* Reset the per-output-tuple exprcontext */
@@ -2251,7 +2254,7 @@ static void ExecutePlan(EState *estate, PlanState *planstate, CmdType operation,
         /*
          * Count tuples processed, if this is a SELECT.  (For other operation
          * types, the ModifyTable plan node must count the appropriate
-         * events.)
+         * events.) 计数已处理的元组（如果这是SELECT）(对于其他操作*类型，ModifyTable计划节点必须统计相应的*事件。）
          */
         if (operation == CMD_SELECT) {
             (estate->es_processed)++;

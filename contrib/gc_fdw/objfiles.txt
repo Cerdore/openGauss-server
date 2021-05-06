@@ -1,0 +1,1 @@
+contrib/gc_fdw/gc_fdw_single.o contrib/gc_fdw/option_single.o contrib/gc_fdw/deparse_single.o

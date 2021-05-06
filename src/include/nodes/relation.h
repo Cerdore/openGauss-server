@@ -197,7 +197,7 @@ typedef struct PlannerGlobal {
 
 /* ----------
  * PlannerInfo
- *		Per-query information for planning/optimization
+ *		Per-query information for planning/optimization 
  *
  * This struct is conventionally called "root" in all the planner routines.
  * It holds links to all of the planner's working state, in addition to the

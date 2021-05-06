@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-04-28 10:31:02
- * @LastEditTime: 2021-04-28 10:58:48
+ * @LastEditTime: 2021-04-29 08:40:48
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/src/include/executor/execdesc.h
@@ -66,8 +66,8 @@ typedef struct QueryDesc {
     /* This is always set NULL by the core system, but plugins can change it */
     struct Instrumentation* totaltime; /* total time spent in ExecutorRun */
 
-    int onGPU;//CHANGEME
-    struct clContext * context;	/* GPU Context */
+  //  int onGPU;//CHANGEME
+  //  struct clContext * context;	/* GPU Context */
 
     bool executed;                     /* if the query already executed */
 #ifdef ENABLE_MOT
@@ -82,7 +82,7 @@ extern QueryDesc* CreateQueryDesc(PlannedStmt* plannedstmt, const char* sourceTe
     JitExec::JitContext* mot_jit_context = nullptr);
 #else
 extern QueryDesc* CreateQueryDesc(PlannedStmt* plannedstmt, const char* sourceText, Snapshot snapshot,
-    Snapshot crosscheck_snapshot, DestReceiver* dest, ParamListInfo params, int instrument_options,  struct clContext * context);   //CHANGEME: add opencl context
+    Snapshot crosscheck_snapshot, DestReceiver* dest, ParamListInfo params, int instrument_options);//,  struct clContext * context);   //CHANGEME: add opencl context
 #endif
 
 extern QueryDesc* CreateUtilityQueryDesc(

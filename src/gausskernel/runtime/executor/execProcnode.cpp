@@ -743,6 +743,7 @@ void ExecProcNodeInstr(PlanState* node, TupleTableSlot* result)
  *		ExecProcNode
  *
  *		Execute the given node to return a(nother) tuple.
+ *      执行给定的节点以返回（另一个）元组。
  * ----------------------------------------------------------------
  */
 TupleTableSlot* ExecProcNode(PlanState* node)
@@ -776,7 +777,7 @@ TupleTableSlot* ExecProcNode(PlanState* node)
 
     if (node->instrument != NULL) {
         ExecProcNodeInstr(node, result);
-    }
+    
 
     MemoryContextSwitchTo(old_context);
 

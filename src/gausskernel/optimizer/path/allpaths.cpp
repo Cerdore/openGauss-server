@@ -1,7 +1,7 @@
 /* -------------------------------------------------------------------------
  *
  * allpaths.cpp
- *	  Routines to find possible search paths for processing a query
+ *	  Routines to find possible search paths for processing a query 查找用于处理查询的可能搜索路径的例程
  *
  * Portions Copyright (c) 2020 Huawei Technologies Co.,Ltd.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
@@ -943,29 +943,31 @@ static void set_plain_rel_pathlist(PlannerInfo* root, RelOptInfo* rel, RangeTblE
     ListCell* lc = NULL;
 
     Relids      required_outer;
+
+//  /**
+//   * @description:  add by cxs
+//   * @param {*}
+//   * @return {*}
+//   */
+// 	int onGPU = 0;//CHANGEME
+// 	ListCell *l;
+
+// 	foreach(l, root->rowMarks){
+// 		PlanRowMark *rc = (PlanRowMark *)lfirst(l);
+// 		if(rc->markType == ROW_MARK_GPU){
+// 			onGPU = 1;
+// 			break;
+// 		}
+//         break;
+// 	}
+
+
     /*
      * We don't support pushing join clauses into the quals of a seqscan, but
      * it could still have required parameterization due to LATERAL refs in
      * its tlist.  (That can only happen if the seqscan is on a relation
      * pulled up out of a UNION ALL appendrel.)
      */
-
- /**
-  * @description:  add by cxs
-  * @param {*}
-  * @return {*}
-  */
-	int onGPU = 0;//CHANGEME
-	ListCell *l;
-
-	foreach(l, root->rowMarks){
-		PlanRowMark *rc = (PlanRowMark *)lfirst(l);
-		if(rc->markType == ROW_MARK_GPU){
-			onGPU = 1;
-			break;
-		}
-        break;
-	}
     required_outer = rel->lateral_relids;
 
 
@@ -1044,7 +1046,7 @@ static void set_plain_rel_pathlist(PlannerInfo* root, RelOptInfo* rel, RangeTblE
             }
         }
 
-        if(onGPU == 0){
+        // if(onGPU == 0){
         /* Tablesample don't support indexscan and tidscan. */
         if (rte->tablesample == NULL) {
             /* Consider index scans */
@@ -1058,7 +1060,7 @@ static void set_plain_rel_pathlist(PlannerInfo* root, RelOptInfo* rel, RangeTblE
             if (rel->orientation == REL_ROW_ORIENTED)
                 create_tidscan_paths(root, rel);
         }
-        }
+        // }
 #ifdef PGXC
     } else {
         Oid relId = rte->relid;

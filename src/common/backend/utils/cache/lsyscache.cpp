@@ -1697,7 +1697,7 @@ Oid get_valid_relname_relid(const char* relnamespace, const char* relname)
     return relid;
 }
 
-////////#////ifdef PGXC  
+#ifdef PGXC  
 //CHANGEME: edit the annotion
 /*
  * get_relnatts

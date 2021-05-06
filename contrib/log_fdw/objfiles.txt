@@ -1,0 +1,1 @@
+contrib/log_fdw/log_fdw.o contrib/log_fdw/prflog_dump.o

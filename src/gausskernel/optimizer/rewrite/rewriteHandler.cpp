@@ -1667,6 +1667,7 @@ static bool fireRIRonSubLink(Node* node, List* activeRIRs)
 /*
  * fireRIRrules -
  *	Apply all RIR rules on each rangetable entry in a query
+ *  对查询中的每个rangetable条目应用所有RIR规则
  */
 static Query* fireRIRrules(Query* parsetree, List* activeRIRs, bool forUpdatePushedDown)
 {
@@ -2633,9 +2634,11 @@ static List* RewriteQuery(Query* parsetree, List* rewrite_events)
  *	  Primary entry point to the query rewriter.
  *	  Rewrite one query via query rewrite system, possibly returning 0
  *	  or many queries.
+ *    通过查询重写系统重写一个查询，可能返回0*或多个查询。
  *
  * NOTE: the parsetree must either have come straight from the parser,
  * or have been scanned by AcquireRewriteLocks to acquire suitable locks.
+ * parsetree必须直接来自解析器，或者由AcquireWriteLocks扫描以获取合适的锁。
  */
 List* QueryRewrite(Query* parsetree)
 {
