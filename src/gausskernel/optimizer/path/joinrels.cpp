@@ -68,7 +68,7 @@ void join_search_one_level(PlannerInfo* root, int level)
      * exactly level-1 member relations are joined against initial relations.
      * We prefer to join using join clauses, but if we find a rel of level-1
      * members that has no join clauses, we will generate Cartesian-product
-     * joins against all initial rels not already contained in it.
+     * joins against all initial rels not already contained in it.  没有join子句的话可以生成笛卡尔积
      */
     foreach (r, joinrels[level - 1]) {
         RelOptInfo* old_rel = (RelOptInfo*)lfirst(r);

@@ -2518,7 +2518,7 @@ DynamicWorkloadRecord* dywlm_get_records(int* num)
 }
 
 /*
- * @Description: client dynamic workload manager
+ * @Description: client dynamic workload manager 客户端动态工作负载管理器
  * @IN void
  * @Return: void
  * @See also:

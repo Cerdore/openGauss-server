@@ -1519,7 +1519,7 @@ bool add_path_precheck(
 /*****************************************************************************
  *		PATH NODE CREATION ROUTINES
  *****************************************************************************/
-/*
+/* 参数解析： root 查询优化器的上下文信息， rel 要扫描的基表对应的结构体， required_outer 引用了哪些其他表的属性
  * create_seqscan_path
  *	  Creates a path corresponding to a sequential scan, returning the
  *	  pathnode.

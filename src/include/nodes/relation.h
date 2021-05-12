@@ -904,19 +904,19 @@ typedef struct ParamPathInfo {
 typedef struct Path {
     NodeTag type;
 
-    NodeTag pathtype; /* tag identifying scan/join method */
+    NodeTag pathtype; /*路径类型 tag identifying scan/join method */
 
-    RelOptInfo* parent;        /* the relation this path can build */
+    RelOptInfo* parent;        /*当前路径服务于哪个逻辑连接 the relation this path can build */
     ParamPathInfo* param_info; /* parameterization info, or NULL if none */
 
     /* estimated size/costs for path (see costsize.c for more info) */
-    double rows; /* estimated number of global result tuples */
+    double rows; /*当前路径执行的中间结果估计有多少数据 estimated number of global result tuples */
     double multiple;
     Cost startup_cost; /* cost expended before fetching any tuples */
     Cost total_cost;   /* total cost (assuming all tuples fetched) */
     Cost stream_cost;  /* cost of actions invoked by stream but can't be parallelled in this path */
 
-    List* pathkeys;        /* sort ordering of path's output */
+    List* pathkeys;        /*当前路径产生的中间结果的排序键值，无序则为NULL sort ordering of path's output */
     List* distribute_keys; /* distribute key, Var list */
     char locator_type;
     Oid rangelistOid;

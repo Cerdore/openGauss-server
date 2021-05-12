@@ -1251,7 +1251,7 @@ static inline bool planstate_need_stub(PlanState* ps)
  *	these are defined to avoid confusion problems with "left"
  *	and "right" and "inner" and "outer".  The convention is that
  *	the "left" plan is the "outer" plan and the "right" plan is
- *	the inner plan, but these make the code more readable.
+ *	the inner plan, but these make the code more readable.    左是外， 右是内
  * ----------------
  */
 #define innerPlanState(node) (((PlanState*)(node))->righttree)

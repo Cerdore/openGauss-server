@@ -1119,7 +1119,7 @@ PlannedStmt* pg_plan_query(Query* querytree, int cursorOptions, ParamListInfo bo
         check_query_acl(querytree);
 
     /* call the optimizer */
-    plan = planner(querytree, cursorOptions, boundParams);
+    plan = planner(querytree, cursorOptions, boundParams);      //调用 optimizer， 生成路径等等
 
     PGSTAT_END_TIME_RECORD(PLAN_TIME);
 
@@ -1227,7 +1227,7 @@ List* pg_plan_queries(List* querytrees, int cursorOptions, ParamListInfo boundPa
 
             bool is_insert_multiple_values = is_insert_multiple_values_query_in_gtmfree(query);
 
-            stmt = (Node*)pg_plan_query(query, cursorOptions, boundParams);
+            stmt = (Node*)pg_plan_query(query, cursorOptions, boundParams); //入口 
  
             /* When insert multiple values query is a generate plan,
              * we don't consider whether it can be executed on a single dn.
@@ -2561,7 +2561,7 @@ static void exec_simple_query(const char* query_string, MessageType messageType,
         /*
          * Start the portal.  No parameters here.
          */
-        PortalStart(portal, NULL, 0, InvalidSnapshot);
+        PortalStart(portal, NULL, 0, InvalidSnapshot);                  
 
         /*
          * Select the appropriate output format: text unless we are doing a

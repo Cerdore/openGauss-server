@@ -1521,9 +1521,9 @@ typedef enum TdTruncCastStatus {
  * 	  node --- the Query structure is not used by the executor.
  */
 typedef struct Query {
-    NodeTag type;
+    NodeTag type; /*Node 类型*/
 
-    CmdType commandType; /* select|insert|update|delete|merge|utility */
+    CmdType commandType; /*语句类型 select|insert|update|delete|merge|utility */
 
     QuerySource querySource; /* where did I come from? */
 
@@ -1531,7 +1531,7 @@ typedef struct Query {
 
     bool canSetTag; /* do I set the command result tag? */
 
-    Node* utilityStmt; /* non-null if this is DECLARE CURSOR or a
+    Node* utilityStmt; /* utility 类型语句，通常为DDL语句。non-null if this is DECLARE CURSOR or a
                         * non-optimizable statement */
 
     int resultRelation; /* rtable index of target relation for

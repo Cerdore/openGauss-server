@@ -172,8 +172,8 @@ static inline void updateRelOptInfoMinSecurity(RelOptInfo* rel)
 
 /*
  * make_one_rel
- *	  Finds all possible access paths for executing a query, returning a
- *	  single rel that represents the join of all base rels in the query.
+ *	  Finds all possible access paths for executing a query, returning a 返回一个RelOptInfo 结构体，向其中增加物理路径。
+ *	  single rel that represents the join of all base rels in the query. 先生成扫描路径在生成连接路径。
  */
 RelOptInfo* make_one_rel(PlannerInfo* root, List* joinlist)
 {
@@ -691,7 +691,7 @@ static void set_rel_pathlist(PlannerInfo* root, RelOptInfo* rel, Index rti, Rang
         set_append_rel_pathlist(root, rel, rti, rte);
     } else {
         switch (rel->rtekind) {
-            case RTE_RELATION:
+            case RTE_RELATION:      // 普通表的扫描路径
                 /*
                  * If the rel can apply inlist2join and the guc qrw_inlist2join_optmode=rule_base
                  * So we can just convert inlist to join, there is no need to genenate other paths
@@ -705,7 +705,7 @@ static void set_rel_pathlist(PlannerInfo* root, RelOptInfo* rel, Index rti, Rang
                     set_foreign_pathlist(root, rel, rte);
                 } else {
                     /* Plain relation */
-                    set_plain_rel_pathlist(root, rel, rte);
+                    set_plain_rel_pathlist(root, rel, rte);     //常见的堆表
                 }
                 break;
             case RTE_SUBQUERY:
@@ -967,6 +967,7 @@ static void set_plain_rel_pathlist(PlannerInfo* root, RelOptInfo* rel, RangeTblE
      * it could still have required parameterization due to LATERAL refs in
      * its tlist.  (That can only happen if the seqscan is on a relation
      * pulled up out of a UNION ALL appendrel.)
+     * 
      */
     required_outer = rel->lateral_relids;
 

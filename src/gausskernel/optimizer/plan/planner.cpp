@@ -371,7 +371,7 @@ PlannedStmt* planner(Query* parse, int cursorOptions, ParamListInfo boundParams)
      * is not allowed to go into PGXC planner.
      */
     if ((IS_PGXC_COORDINATOR || IS_SINGLE_NODE) && !IsConnFromCoord())
-        result = pgxc_planner(parse, cursorOptions, boundParams);
+        result = pgxc_planner(parse, cursorOptions, boundParams);        
     else
 #endif
         result = standard_planner(parse, cursorOptions, boundParams);
@@ -2834,7 +2834,7 @@ static Plan* grouping_planner(PlannerInfo* root, double tuple_fraction)
          * Generate the best unsorted and presorted paths for this Query (but
          * note there may not be any presorted path).  query_planner will also
          * estimate the number of groups in the query, and canonicalize all
-         * the pathkeys.
+         * the pathkeys.为此查询生成最好的未排序和预先设定的路径(但是注意，可能没有任何预先设定的路径)。Query _ planner 还将估计查询中的组数，并规范化所有路径键。
          */
         query_planner(root,
             sub_tlist,
@@ -2849,7 +2849,8 @@ static Plan* grouping_planner(PlannerInfo* root, double tuple_fraction)
         /* restore superset keys */
         root->dis_keys.superset_keys = superset_key;
 
-        /*
+        /*提取行数和宽度估计值，以便在分组*决策中可能使用。请注意*cheapest path->parent为空的可能性（即没有FROM子句）。
+         * 此外，如果最终rel已被证明是虚拟的，则其行估计值将为零；将其钳制为1，以避免在随后的计算中进行零除。
          * Extract rowcount and width estimates for possible use in grouping
          * decisions.  Beware here of the possibility that
          * cheapest_path->parent is NULL (ie, there is no FROM clause).  Also,

@@ -491,8 +491,7 @@ static struct gpuScanNode* gpuInitScan(PlanState *planstate){
 
     RelationClose(r);
 
-    scannode->table.attrNum = get_relnatts(scannode->tid);
-    scannode->table.attrType = (int*)palloc(sizeof(int)*scannode->table.attrNum);
+    scannode->table.attrNum = get_relnatts(scannode->tid);              // get the number of attributes for a given relation.
     scannode->table.attrSize = (int*)palloc(sizeof(int)*scannode->table.attrNum);
     scannode->table.variLen = (int*)palloc(sizeof(int)*scannode->table.attrNum);
     scannode->table.indexIndirect = (int*)palloc(sizeof(int)*scannode->table.attrNum);
@@ -1222,12 +1221,12 @@ static void gpuQueryPlanInit(QueryDesc * querydesc){
     gpuQuery = (struct gpuQueryDesc *)palloc(sizeof(struct gpuQueryDesc));
 
     /*
-     * First step: copy snapshot related data from CPU query description.
+     * First step: copy snapshot related data from CPU query description.从 CPU 查询描述中复制快照相关数据
      */
     gpuInitSnapshot(&(gpuQuery->snapshot), querydesc->snapshot);
 
     /*
-     * Second step: initialize the query plan.
+     * Second step: initialize the query plan.第二步:初始化查询计划。
      */ 
 
     gpuQuery->plan = gpuInitPlan(outerPlan, &nodeNum);

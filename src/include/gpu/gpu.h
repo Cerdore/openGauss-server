@@ -6,6 +6,8 @@
 /*
  * Instead of tuple-a-time processing, we process multiple pages for each operator.
  * The Macro BLOCK defines how many pages we process each time for scan operators.
+ * 我们为每个操作符处理多个页面，而不是一次处理一个元组。
+ * 宏块定义了扫描操作符每次处理多少页。
  */
 #define BLOCK   409600
 

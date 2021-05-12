@@ -89,7 +89,7 @@ static void explain_ExecutorStart(QueryDesc *queryDesc, int eflags)
         /*
          * Set up to track total elapsed time in ExecutorRun.  Make sure the
          * space is allocated in the per-query context so it will go away at
-         * ExecutorEnd.
+         * ExecutorEnd.     在ExecutorRun中设置以跟踪总运行时间。确保在每个查询上下文中分配空间，这样它将在ExecutorEnd处消失。
          */
         if (queryDesc->totaltime == NULL)
         {

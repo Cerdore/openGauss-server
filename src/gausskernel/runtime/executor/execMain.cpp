@@ -394,7 +394,7 @@ void standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
     (void)INSTR_TIME_SET_CURRENT(starttime);
 
     IPC_PERFORMANCE_LOG_OUTPUT("standard_ExecutorStart InitPlan start.");
-    InitPlan(queryDesc, eflags);
+    InitPlan(queryDesc, eflags);                                        
     IPC_PERFORMANCE_LOG_OUTPUT("standard_ExecutorStart InitPlan end.");
     totaltime += elapsed_time(&starttime);
 
@@ -1531,7 +1531,7 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
     queryDesc->tupDesc = tupType;
     queryDesc->planstate = planstate;
 
-    //CHANGEME
+    //CHANGEME 初始化GPU设备（OpenCL）以及查询计划
     // if(queryDesc->onGPU == ONGPU)
 	// 	gpuStart(queryDesc);
 

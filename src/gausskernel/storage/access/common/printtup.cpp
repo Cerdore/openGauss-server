@@ -938,10 +938,10 @@ void printBatch(VectorBatch *batch, DestReceiver *self)
 }
 
 /* ----------------
- *		printtup --- print a tuple in protocol 3.0
+ *		printtup --- print a tuple in protocol 3.0 找到元组发送地址
  * ----------------
  */
-void printtup(TupleTableSlot *slot, DestReceiver *self)
+void printtup(TupleTableSlot *slot, DestReceiver *self) 
 {
     TupleDesc typeinfo = slot->tts_tupleDescriptor;
     DR_printtup *myState = (DR_printtup *)self;

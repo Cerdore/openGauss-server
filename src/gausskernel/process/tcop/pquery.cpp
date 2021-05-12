@@ -781,7 +781,7 @@ void PortalStart(Portal portal, ParamListInfo params, int eflags, Snapshot snaps
                 /*
                  * Call ExecutorStart to prepare the plan for execution
                  */
-                ExecutorStart(queryDesc, myeflags);
+                ExecutorStart(queryDesc, myeflags);                     //之中调用InitPlan()
 
                 /*
                  * This tells PortalCleanup to shut down the executor

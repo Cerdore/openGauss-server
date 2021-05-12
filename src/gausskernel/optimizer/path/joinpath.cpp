@@ -100,7 +100,7 @@ void debug1_print_outerrel_and_innerrel(PlannerInfo* root, RelOptInfo* outerrel,
  *	  consider all possible paths that use the two component rels as outer
  *	  and inner rel respectively.  Add these paths to the join rel's pathlist
  *	  if they survive comparison with other paths (and remove any existing
- *	  paths that are dominated by these paths).
+ *	  paths that are dominated by these paths). 将两个表分别作为内连接表与外连接表，尝试添加join路径，并于其他路径相比。
  *
  * Modifies the pathlist field of the joinrel node to contain the best
  * paths found so far.
@@ -272,7 +272,7 @@ void add_paths_to_joinrel(PlannerInfo* root, RelOptInfo* joinrel, RelOptInfo* ou
      * 1. Consider mergejoin paths where both relations must be explicitly
      * sorted.	Skip this if we can't mergejoin.
      */
-    if (mergejoin_allowed )//&& !onGPU)//CHANGEME
+    if (mergejoin_allowed )//&& !onGPU)//CHANGEME      不生成 Merge Join 路径
         sort_inner_and_outer(
             root, joinrel, outerrel, innerrel, restrictlist, mergeclause_list, jointype, sjinfo, param_source_rels);
 
@@ -282,6 +282,8 @@ void add_paths_to_joinrel(PlannerInfo* root, RelOptInfo* joinrel, RelOptInfo* ou
      * path is already ordered.  Again, skip this if we can't mergejoin.
      * (That's okay because we know that nestloop can't handle right/full
      * joins at all, so it wouldn't work in the prohibited cases either.)
+     * 
+     * 外部路径已经有序
      */
     if (mergejoin_allowed)
         match_unsorted_outer(root,
@@ -326,7 +328,7 @@ void add_paths_to_joinrel(PlannerInfo* root, RelOptInfo* joinrel, RelOptInfo* ou
      * before being joined.  As above, disregard enable_hashjoin for full
      * joins, because there may be no other alternative.
      */
-    if ((u_sess->attr.attr_sql.enable_hashjoin || jointype == JOIN_FULL || hashjoin_hint != NIL))//&& !onGPU)//CHANGEME
+    if ((u_sess->attr.attr_sql.enable_hashjoin || jointype == JOIN_FULL || hashjoin_hint != NIL))//&& !onGPU)//CHANGEME   不生成 Hash Join 路径
         hash_inner_and_outer(
             root, joinrel, outerrel, innerrel, restrictlist, jointype, sjinfo, &semifactors, param_source_rels);
 
@@ -1156,6 +1158,7 @@ static void sort_inner_and_outer(PlannerInfo* root, RelOptInfo* joinrel, RelOptI
  *	  'joinrel' by employing either iterative substitution or
  *	  mergejoining on each of its possible outer paths (considering
  *	  only outer paths that are already ordered well enough for merging).
+ *    通过在每个可能的外部路径上使用 迭代替换 或 mergejoinging ，创建处理单个连接关系 'joinrel'  的可能连接路径  ‘ joinrel’(只考虑已经排序好可以进行合并的外部路径)。
  *
  * We always generate a nestloop path for each available outer path.
  * In fact we may generate as many as five: one on the cheapest-total-cost
@@ -1207,6 +1210,8 @@ static void match_unsorted_outer(PlannerInfo* root, RelOptInfo* joinrel, RelOptI
      * as join clauses, else we will not have a valid plan.  (Although these
      * two flags are currently inverses, keep them separate for clarity and
      * possible future changes.)
+     * Nestloop仅支持内部，左，半和反联接。 另外，如果我们进行正确或完全的合并联接，则必须使用所有的mergeclauses作为联接子句，否则我们将没有有效的计划。 
+     * （尽管这两个标志当前是相反的，但为了清晰起见和将来可能的更改，请将它们分开。）
      */
     switch (jointype) {
         case JOIN_INNER:

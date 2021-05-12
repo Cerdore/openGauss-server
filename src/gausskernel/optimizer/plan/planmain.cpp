@@ -439,7 +439,7 @@ void query_planner(PlannerInfo* root, List* tlist, double tuple_fraction, double
          * Plain non-grouped, non-aggregated query: an absolute tuple fraction
          * can be divided by the number of tuples.
          */
-        if (tuple_fraction >= 1.0)
+-/        if (tuple_fraction >= 1.0)
             tuple_fraction /= clamp_row_est(RELOPTINFO_LOCAL_FIELD(root, final_rel, rows));
         has_groupby = false;
     }

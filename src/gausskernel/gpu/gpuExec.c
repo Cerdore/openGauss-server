@@ -638,7 +638,7 @@ static int gpuExecutePlan(struct gpuPlan *plan, QueryDesc *querydesc){
 /*
  * Fill up the execution queue.
  * The query plan tree is traversed in post order sequence.
- * @index points the next queue node that needs to be filled.
+ * @index points the next queue node that needs to be filled.  填充执行队列; 查询计划树按后序顺序遍历; @index指向需要填充的下一个队列节点。
  */
 
 static void gpuExecQueue(struct gpuPlan * plan, struct gpuPlan ** queue, int *index){
