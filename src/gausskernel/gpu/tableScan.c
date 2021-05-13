@@ -178,12 +178,12 @@ struct tableNode * tableScan(struct scanNode *sn, struct clContext *context, str
             }
 #endif
 
-            if(sn->tn->attrType[index] == INT){
+            if(sn->tn->attrType[index] == INT){                                                         //初始化Scan的Filter
                 int rel = where->exp[0].relation;
                 int whereValue = *((int*) where->exp[0].content);
 
                 if(rel==EQ)
-                    context->kernel = clCreateKernel(context->program, "genScanFilter_init_int_eq", 0);
+                    context->kernel = clCreateKernel(context->program, "genScanFilter_init_int_eq", 0);     
                 else if(rel == GTH)
                     context->kernel = clCreateKernel(context->program, "genScanFilter_init_int_gth", 0);
                 else if(rel == LTH)

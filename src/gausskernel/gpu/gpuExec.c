@@ -701,6 +701,7 @@ void gpuExec(QueryDesc * querydesc){
     while(1){
         /*
          * Currently we consider aggregation and sort as blocking operators.
+         * 目前，我们将聚合和排序视为阻塞运算符。
          */
         for(k = start;k< queueIndex;k++){
             if(execQueue[k]->type == GPU_SORT || execQueue[k]->type == GPU_AGG)
@@ -708,8 +709,8 @@ void gpuExec(QueryDesc * querydesc){
         }
 
         /*
-         * Each operator only only processes BLOCK pages at most.
-         * This process continues until all the operators finish.
+         * Each operator only only processes BLOCK pages at most. 每个运算符最多只处理 BLOCK 页。
+         * This process continues until all the operators finish. 此过程将继续，直到所有算子完成。
          */ 
 
 

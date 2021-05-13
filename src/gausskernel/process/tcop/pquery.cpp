@@ -677,7 +677,7 @@ void PortalStart(Portal portal, ParamListInfo params, int eflags, Snapshot snaps
          */
         switch (portal->strategy) {
             case PORTAL_ONE_SELECT: {
-                ps = (PlannedStmt*)linitial(portal->stmts);
+                ps = (PlannedStmt*)linitial(portal->stmts);     //portal_one_select 应该是只生成了1个执行树，所以取第一个
 
                 /* Must set snapshot before starting executor, unless it is a query with only MOT Tables. */
 #ifdef ENABLE_MOT
@@ -731,7 +731,7 @@ void PortalStart(Portal portal, ParamListInfo params, int eflags, Snapshot snaps
                  * Create QueryDesc in portal's context; for the moment, set
                  * the destination to DestNone.
                  */
-                queryDesc = CreateQueryDesc(
+                queryDesc = CreateQueryDesc(                                                                    
                     ps, portal->sourceText, GetActiveSnapshot(), InvalidSnapshot, None_Receiver, params, 0);
 #endif
 

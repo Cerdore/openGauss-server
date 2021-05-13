@@ -1047,7 +1047,7 @@ static void set_plain_rel_pathlist(PlannerInfo* root, RelOptInfo* rel, RangeTblE
             }
         }
 
-        // if(onGPU == 0){
+        //CHANGEME if(onGPU == 0){
         /* Tablesample don't support indexscan and tidscan. */
         if (rte->tablesample == NULL) {
             /* Consider index scans */

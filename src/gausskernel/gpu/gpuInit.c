@@ -1212,7 +1212,7 @@ static void gpuFreeSnapshot(struct gpuSnapshot *gpuSp){
 
 static void gpuQueryPlanInit(QueryDesc * querydesc){
 
-    PlanState *outerPlan = outerPlanState(querydesc->planstate);
+    PlanState *outerPlan = outerPlanState(querydesc->planstate);    //为什么取的是外路径，即左子树的查询计划
     struct gpuQueryDesc *gpuQuery;
     int nodeNum = 0;
 

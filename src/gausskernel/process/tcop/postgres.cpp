@@ -2538,7 +2538,7 @@ static void exec_simple_query(const char* query_string, MessageType messageType,
             } else
                 PortalDefineQuery(portal, NULL, query_string, commandTag, plantree_list, NULL);
         } else {
-            PortalDefineQuery(portal, NULL, sql_query_string, commandTag, plantree_list, NULL);
+            PortalDefineQuery(portal, NULL, sql_query_string, commandTag, plantree_list, NULL);     //plantree_list 在这里变成了 portal -> stmts
         }
 
         if (ENABLE_WORKLOAD_CONTROL && IS_PGXC_COORDINATOR && is_multi_query_text) {

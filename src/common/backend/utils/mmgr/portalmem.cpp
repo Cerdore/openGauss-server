@@ -320,7 +320,7 @@ void PortalDefineQuery(Portal portal, const char* prepStmtName, const char* sour
     portal->prepStmtName = prepStmtName;
     portal->sourceText = sourceText;
     portal->commandTag = commandTag;
-    portal->stmts = stmts;
+    portal->stmts = stmts;                      //
     portal->cplan = cplan;
     if (cplan) {
         pg_atomic_fetch_add_u32((volatile uint32*)&cplan->global_refcount, 1);

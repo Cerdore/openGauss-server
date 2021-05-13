@@ -1183,7 +1183,7 @@ typedef enum {
  *		PlanState node
  *
  * We never actually instantiate any PlanState nodes; this is just the common
- * abstract superclass for all PlanState-type nodes.
+ * abstract superclass for all PlanState-type nodes.我们从未实际实例化任何PlanState节点；这只是所有PlanState类型节点的公共抽象超类。
  * ----------------
  */
 typedef struct PlanState {
