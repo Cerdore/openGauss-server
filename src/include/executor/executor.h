@@ -131,7 +131,11 @@ extern inline bool is_errmodule_enable(int elevel, ModuleId mod_id);
 #define INVALID_RU_PLANNODE_ID 0
 #define EXEC_IN_RECURSIVE_MODE(x) (((Plan*)x)->recursive_union_plan_nodeid != INVALID_RU_PLANNODE_ID)
 
-
+//cxs
+/***********  Hook for plugins to get control in ExecProcNode() ***********/
+typedef TupleTableSlot *(*ExecProcNode_hook_type) (PlanState *node);
+extern PGDLLIMPORT ExecProcNode_hook_type ExecProcNode_hook;
+/**************************************************************************/
 
 /* Hook for plugins to get control in ExecutorStart() */
 typedef void (*ExecutorStart_hook_type)(QueryDesc* queryDesc, int eflags);

@@ -592,13 +592,13 @@ typedef struct HeapTupleData {
     uint1 tupTableType = HEAP_TUPLE;
     int2   t_bucketId;
     ItemPointerData t_self; /* SelfItemPointer */
-    Oid t_tableOid;         /* table the tuple came from */
+    Oid t_tableOid;         /* table the tuple came from 元组所属表的OID */
     TransactionId t_xid_base;
     TransactionId t_multi_base;
 #ifdef PGXC
     uint32 t_xc_node_id; /* Data node the tuple came from */
 #endif
-    HeapTupleHeader t_data; /* -> tuple header and data */
+    HeapTupleHeader t_data; /* -> tuple header and data 指向元组头部*/
 } HeapTupleData;
 
 typedef HeapTupleData* HeapTuple;
