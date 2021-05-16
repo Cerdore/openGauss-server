@@ -30,9 +30,8 @@
 
 #ifdef ENABLE_MOT
 // forward declaration for MOT JitContext
-namespace JitExec
-{
-    struct JitContext;
+namespace JitExec {
+struct JitContext;
 }
 #endif
 
@@ -77,8 +76,8 @@ typedef struct UtilityDesc {
  */
 typedef struct IndexInfo {
     NodeTag type;
-    int ii_NumIndexAttrs;       /* total number of columns in index */
-    int ii_NumIndexKeyAttrs;    /* number of key columns in index */
+    int ii_NumIndexAttrs;    /* total number of columns in index */
+    int ii_NumIndexKeyAttrs; /* number of key columns in index */
     AttrNumber ii_KeyAttrNumbers[INDEX_MAX_KEYS];
     List* ii_Expressions;       /* list of Expr */
     List* ii_ExpressionsState;  /* list of ExprState */
@@ -87,9 +86,9 @@ typedef struct IndexInfo {
     Oid* ii_ExclusionOps;       /* array with one entry per column */
     Oid* ii_ExclusionProcs;     /* array with one entry per column */
     uint16* ii_ExclusionStrats; /* array with one entry per column */
-    Oid *ii_UniqueOps;          /* array with one entry per column */
-    Oid *ii_UniqueProcs;        /* array with one entry per column */
-    uint16 *ii_UniqueStrats;    /* array with one entry per column */
+    Oid* ii_UniqueOps;          /* array with one entry per column */
+    Oid* ii_UniqueProcs;        /* array with one entry per column */
+    uint16* ii_UniqueStrats;    /* array with one entry per column */
     bool ii_Unique;
     bool ii_ReadyForInserts;
     bool ii_Concurrent;
@@ -371,7 +370,7 @@ typedef struct JunkFilter {
     AttrNumber jf_xc_node_id;
     AttrNumber jf_xc_wholerow;
     AttrNumber jf_xc_part_id;
-    AttrNumber jf_xc_bucket_id;	
+    AttrNumber jf_xc_bucket_id;
     List* jf_primary_keys;
 #endif
 } JunkFilter;
@@ -426,7 +425,7 @@ typedef struct ResultRelInfo {
     List** ri_ConstraintExprs;
     JunkFilter* ri_junkFilter;
     AttrNumber ri_partOidAttNum;
-    AttrNumber ri_bucketIdAttNum;	
+    AttrNumber ri_bucketIdAttNum;
     ProjectionInfo* ri_projectReturning;
 
     /* for running MERGE on this result relation */
@@ -455,7 +454,7 @@ typedef struct BloomFilterControl {
     int array_size;                /* bloom filter array size. */
 } BloomFilterControl;
 
-#define InvalidBktId  (-1)    /* invalid hash-bucket id */
+#define InvalidBktId (-1) /* invalid hash-bucket id */
 
 /* ----------------
  *	  EState information
@@ -551,12 +550,12 @@ typedef struct EState {
     bool* es_epqScanDone;   /* true if EPQ tuple has been fetched */
 
     List* es_subplan_ids;
-    bool es_skip_early_free;            /* true if we don't apply early free mechanisim, especially for subplan */
+    bool es_skip_early_free; /* true if we don't apply early free mechanisim, especially for subplan */
     /* true if we don't apply early-free-consumer mechanisim, especially for subplan */
-    bool es_skip_early_deinit_consumer; 
-    bool es_under_subplan;              /* true if operator is under a subplan */
-    List* es_material_of_subplan;       /* List of Materialize operator of subplan */
-    bool es_recursive_next_iteration;   /* true if under recursive-stream and need to rescan. */
+    bool es_skip_early_deinit_consumer;
+    bool es_under_subplan;            /* true if operator is under a subplan */
+    List* es_material_of_subplan;     /* List of Materialize operator of subplan */
+    bool es_recursive_next_iteration; /* true if under recursive-stream and need to rescan. */
 
     /* data redistribution for DFS table.
      * dataDestRelIndex is index into the range table. This variable
@@ -571,7 +570,7 @@ typedef struct EState {
 
     bool isRowTriggerShippable; /* true if all row triggers are shippable. */
 #ifdef ENABLE_MOT
-    JitExec::JitContext* mot_jit_context;   /* MOT JIT context required for executing LLVM jitted code */
+    JitExec::JitContext* mot_jit_context; /* MOT JIT context required for executing LLVM jitted code */
 #endif
 
     PruningResult* pruningResult;
@@ -882,8 +881,8 @@ typedef struct ScalarArrayOpExprState {
     bool typbyval;
     char typalign;
     bool* pSel; /* selection used to fast path of ALL/ANY */
-    ScalarVector *tmpVecLeft;
-    ScalarVector *tmpVecRight;
+    ScalarVector* tmpVecLeft;
+    ScalarVector* tmpVecRight;
     ScalarVector* tmpVec;
 } ScalarArrayOpExprState;
 
@@ -1173,17 +1172,14 @@ typedef struct HbktScanSlot {
  * that describes the plan.
  * ----------------------------------------------------------------
  */
-typedef enum {
-	PST_None = 0,
-	PST_Norm = 1,
-	PST_Scan = 2
-} PlanStubType;
+typedef enum { PST_None = 0, PST_Norm = 1, PST_Scan = 2 } PlanStubType;
 
 /* ----------------
  *		PlanState node
  *
  * We never actually instantiate any PlanState nodes; this is just the common
- * abstract superclass for all PlanState-type nodes.我们从未实际实例化任何PlanState节点；这只是所有PlanState类型节点的公共抽象超类。
+ * abstract superclass for all PlanState-type
+ *nodes.我们从未实际实例化任何PlanState节点；这只是所有PlanState类型节点的公共抽象超类。
  * ----------------
  */
 typedef struct PlanState {
@@ -1228,7 +1224,7 @@ typedef struct PlanState {
     MemoryContext nodeContext; /* Memory Context for this Node */
 
     bool earlyFreed;                 /* node memory already freed? */
-    uint8  stubType;                 /* node stub execution type, see @PlanStubType */
+    uint8 stubType;                  /* node stub execution type, see @PlanStubType */
     vectarget_func jitted_vectarget; /* LLVM IR function pointer to point to the codegened targetlist expr. */
 
     /*
@@ -1239,19 +1235,19 @@ typedef struct PlanState {
     bool recursive_reset; /* node already reset? */
     bool qual_is_inited;
 
-    int64 ps_rownum;    /* store current rownum */
+    int64 ps_rownum; /* store current rownum */
 } PlanState;
 
 static inline bool planstate_need_stub(PlanState* ps)
 {
-	return ps->stubType != PST_None;
+    return ps->stubType != PST_None;
 }
 
 /* ----------------
  *	these are defined to avoid confusion problems with "left"
  *	and "right" and "inner" and "outer".  The convention is that
  *	the "left" plan is the "outer" plan and the "right" plan is
- *	the inner plan, but these make the code more readable.    左是外， 右是内
+ *	the inner plan, but these make the code more readable.    左 left 是外outer， 右是内
  * ----------------
  */
 #define innerPlanState(node) (((PlanState*)(node))->righttree)
@@ -1313,13 +1309,12 @@ typedef struct MergeActionState {
  *	 UpsertState information
  * ----------------
  */
-typedef struct UpsertState
-{
-	NodeTag			type;
-	UpsertAction	us_action; 				/* Flags showing DUPLICATE UPDATE NOTHING or SOMETHING */
-	TupleTableSlot	*us_existing;			/* slot to store existing target tuple in */
-	List			*us_excludedtlist;		/* the excluded pseudo relation's tlist */
-	TupleTableSlot	*us_updateproj;			/* slot to update */
+typedef struct UpsertState {
+    NodeTag type;
+    UpsertAction us_action;        /* Flags showing DUPLICATE UPDATE NOTHING or SOMETHING */
+    TupleTableSlot* us_existing;   /* slot to store existing target tuple in */
+    List* us_excludedtlist;        /* the excluded pseudo relation's tlist */
+    TupleTableSlot* us_updateproj; /* slot to update */
 } UpsertState;
 
 /* ----------------
@@ -1357,8 +1352,8 @@ typedef struct ModifyTableState {
     TupleTableSlot* mt_mergeproj;          /* MERGE action projection target */
     uint32 mt_merge_subcommands;           /* Flags showing which subcommands are present INS/UPD/DEL/DO NOTHING */
     UpsertState* mt_upsert;                /*  DUPLICATE KEY UPDATE evaluation state */
-    instr_time first_tuple_modified; /* record the end time for the first tuple inserted, deleted, or updated */
-    ExprContext* limitExprContext; /* for limit expresssion */
+    instr_time first_tuple_modified;       /* record the end time for the first tuple inserted, deleted, or updated */
+    ExprContext* limitExprContext;         /* for limit expresssion */
 } ModifyTableState;
 
 typedef struct CopyFromManagerData* CopyFromManager;
@@ -1527,8 +1522,8 @@ struct SeqScanAccessor;
 /*
  * prototypes from functions in execScan.c
  */
-typedef TupleTableSlot *(*ExecScanAccessMtd) (ScanState *node);
-typedef bool(*ExecScanRecheckMtd) (ScanState *node, TupleTableSlot *slot);
+typedef TupleTableSlot* (*ExecScanAccessMtd)(ScanState* node);
+typedef bool (*ExecScanRecheckMtd)(ScanState* node, TupleTableSlot* slot);
 
 typedef struct ScanState {
     PlanState ps; /* its first field is NodeTag */
@@ -1547,11 +1542,11 @@ typedef struct ScanState {
     bool is_scan_end; /* @hdfs Mark whether iterator is over or not, if the scan uses informational constraint. */
     SeqScanAccessor* ss_scanaccessor; /* prefetch related */
     int part_id;
-    int startPartitionId;            /* start partition id for parallel threads. */
-    int endPartitionId;              /* end partition id for parallel threads. */
-    RangeScanInRedis rangeScanInRedis;         /* if it is a range scan in redistribution time */
-    bool isSampleScan;               /* identify is it table sample scan or not. */
-    SampleScanParams sampleScanInfo; /* TABLESAMPLE params include type/seed/repeatable. */
+    int startPartitionId;              /* start partition id for parallel threads. */
+    int endPartitionId;                /* end partition id for parallel threads. */
+    RangeScanInRedis rangeScanInRedis; /* if it is a range scan in redistribution time */
+    bool isSampleScan;                 /* identify is it table sample scan or not. */
+    SampleScanParams sampleScanInfo;   /* TABLESAMPLE params include type/seed/repeatable. */
     ExecScanAccessMtd ScanNextMtd;
 } ScanState;
 
@@ -1711,7 +1706,7 @@ typedef struct BitmapHeapScanState {
     TBMIterator* prefetch_iterator;
     int prefetch_pages;
     int prefetch_target;
-    GPIScanDesc gpi_scan;  /* global partition index scan use information */
+    GPIScanDesc gpi_scan; /* global partition index scan use information */
     int part_id;
 } BitmapHeapScanState;
 
@@ -1771,7 +1766,7 @@ typedef struct FunctionScanState {
     TupleDesc tupdesc;
     Tuplestorestate* tuplestorestate;
     ExprState* funcexpr;
-    bool atomic;  /* Atomic execution context, does not allow transactions */
+    bool atomic; /* Atomic execution context, does not allow transactions */
 } FunctionScanState;
 
 /* ----------------
@@ -2081,7 +2076,8 @@ typedef struct HashJoinState {
     int hj_CurBucketNo;
     int hj_CurSkewBucketNo;
     HashJoinTuple hj_CurTuple;
-    /* pointer which follows hj_CurTuple help us to delete matched tuples in HashTable.designed for Right Semi/Anti Join */
+    /* pointer which follows hj_CurTuple help us to delete matched tuples in HashTable.designed for Right Semi/Anti Join
+     */
     HashJoinTuple hj_PreTuple;
     TupleTableSlot* hj_OuterTupleSlot;
     TupleTableSlot* hj_HashTupleSlot;
@@ -2404,8 +2400,8 @@ struct VecLimitState : public LimitState {
  * RownumState node: used for computing the pseudo-column ROWNUM
  */
 typedef struct RownumState {
-    ExprState  xprstate;
-    PlanState* ps;   /* the value of ROWNUM depends on its parent PlanState */
+    ExprState xprstate;
+    PlanState* ps; /* the value of ROWNUM depends on its parent PlanState */
 } RownumState;
 
 /* ----------------
@@ -2443,12 +2439,12 @@ typedef struct GroupingIdExprState {
 /*
  * used by TsStoreInsert in nodeModifyTable.h and vecmodifytable.cpp
  */
-#define FLUSH_DATA_TSDB(obj, type)                              \
-    do{                                                     \
-        ((type*)obj)->BatchInsert((VectorBatch*)NULL, 0);   \
-        ((type*)obj)->end_batch_insert();           \
+#define FLUSH_DATA_TSDB(obj, type)                        \
+    do {                                                  \
+        ((type*)obj)->BatchInsert((VectorBatch*)NULL, 0); \
+        ((type*)obj)->end_batch_insert();                 \
         ((type*)obj)->Destroy();                          \
-    }while(0)
+    } while (0)
 /*
  * record the first tuple time used by INSERT, UPDATE and DELETE in ExecModifyTable and ExecVecModifyTable
  */
@@ -2460,7 +2456,8 @@ typedef struct GroupingIdExprState {
         }                                                       \
     } while (0)
 
-extern TupleTableSlot* ExecMakeTupleSlot(Tuple tuple, TableScanDesc tableScan, TupleTableSlot* slot, TableAmType tableAm);
+extern TupleTableSlot* ExecMakeTupleSlot(
+    Tuple tuple, TableScanDesc tableScan, TupleTableSlot* slot, TableAmType tableAm);
 
 /*
  * When the global partition index is used for bitmap scanning,
@@ -2472,7 +2469,6 @@ inline bool BitmapNodeNeedSwitchPartRel(BitmapHeapScanState* node)
     return tbm_is_global(node->tbm) && GPIScanCheckPartOid(node->gpi_scan, node->tbmres->partitionOid);
 }
 
-extern RangeScanInRedis reset_scan_qual(Relation currHeapRel, ScanState *node);
+extern RangeScanInRedis reset_scan_qual(Relation currHeapRel, ScanState* node);
 
 #endif /* EXECNODES_H */
-

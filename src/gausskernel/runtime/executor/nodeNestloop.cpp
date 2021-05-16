@@ -42,7 +42,7 @@ static void MaterialAll(PlanState* node)
         ExecEarlyFree(outerPlanState(node));
 
         /* early deinit consumer in left tree of Material.
-         * It should be noticed that we can not do early deinit 
+         * It should be noticed that we can not do early deinit
          * within predpush.
          */
         if (node != NULL && !CheckParamWalker(node)) {
@@ -137,7 +137,7 @@ TupleTableSlot* ExecNestLoop(NestLoopState* node)
          * If we don't have an outer tuple, get the next one and reset the
          * inner scan.
          */
-        if (node->nl_NeedNewOuter) {
+        if (node->nl_NeedNewOuter) {  // get right(outer) plan tuple
             ENL1_printf("getting new outer tuple");
             outer_tuple_slot = ExecProcNode(outer_plan);
             /*

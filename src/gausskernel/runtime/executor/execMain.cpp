@@ -25,13 +25,14 @@
  * 	ExecutorFinish must be called after the final ExecutorRun call and
  * 	before ExecutorEnd.  This can be omitted only in case of EXPLAIN,
  * 	which should also omit ExecutorRun.
- * 
+ *
  * 这四个过程是执行程序的外部接口。
  * 在每种情况下，查询描述符都需要作为参数。
  * ExecutorStart必须在任何*查询计划的开始执行时调用，ExecutorEnd必须总是在计划的*执行结束时调用(除非它由于错误而中止)。
  * ExecutorRun接受direction和count参数，指定计划是向前执行，向后执行，以及执行多少个元组。
  * 在某些情况下，ExecutorRun可能会被多次调用来处理一个计划的所有元组。在没有执行整个计划时停止也是可以接受的(但仅当它是一个SELECT时)。
- * ExecutorFinish 必须在最终的execuorrun调用之后调用，在ExecutorEnd调用之前调用。这只能在EXPLAIN，的情况下被省略，它也应该省略ExecutorRun。
+ * ExecutorFinish
+ * 必须在最终的execuorrun调用之后调用，在ExecutorEnd调用之前调用。这只能在EXPLAIN，的情况下被省略，它也应该省略ExecutorRun。
  *
  * Portions Copyright (c) 2020 Huawei Technologies Co.,Ltd.
  * Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
@@ -98,9 +99,9 @@
 #include "storage/mot/jit_exec.h"
 #endif
 
-//cxs 是否应该添加 THR_LOCAL 防止进程中的全局变量被误用
+// cxs 是否应该添加 THR_LOCAL 防止进程中的全局变量被误用
 /******** Hooks for plugins to get control in ExecutorStart/Run/Finish/End ********/
-ExecProcNode_hook_type ExecProcNode_hook = NULL; //ExecProcNode;
+THR_LOCAL ExecProcNode_hook_type ExecProcNode_hook = NULL;  // ExecProcNode;
 /**********************************************************************************/
 
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
@@ -114,33 +115,33 @@ THR_LOCAL ExecutorCheckPerms_hook_type ExecutorCheckPerms_hook = NULL;
 #define THREAD_INTSERVAL_60S 60
 
 /* Debug information to hold the string of top plan node's node tag */
-THR_LOCAL char *producer_top_plannode_str = NULL;
+THR_LOCAL char* producer_top_plannode_str = NULL;
 THR_LOCAL bool is_syncup_producer = false;
 
 /* decls for local routines only used within this module */
-void InitPlan(QueryDesc *queryDesc, int eflags);
+void InitPlan(QueryDesc* queryDesc, int eflags);
 static void CheckValidRowMarkRel(Relation rel, RowMarkType markType);
-static void ExecPostprocessPlan(EState *estate);
-static void ExecEndPlan(PlanState *planstate, EState *estate);
-static void ExecCollectMaterialForSubplan(EState *estate);
+static void ExecPostprocessPlan(EState* estate);
+static void ExecEndPlan(PlanState* planstate, EState* estate);
+static void ExecCollectMaterialForSubplan(EState* estate);
 #ifdef ENABLE_MOT
-static void ExecutePlan(EState *estate, PlanState *planstate, CmdType operation, bool sendTuples, long numberTuples,
-    ScanDirection direction, DestReceiver *dest, JitExec::JitContext* mot_jit_context);
+static void ExecutePlan(EState* estate, PlanState* planstate, CmdType operation, bool sendTuples, long numberTuples,
+    ScanDirection direction, DestReceiver* dest, JitExec::JitContext* mot_jit_context);
 #else
-static void ExecutePlan(EState *estate, PlanState *planstate, CmdType operation, bool sendTuples, long numberTuples,
-    ScanDirection direction, DestReceiver *dest);
+static void ExecutePlan(EState* estate, PlanState* planstate, CmdType operation, bool sendTuples, long numberTuples,
+    ScanDirection direction, DestReceiver* dest);
 #endif
-static void ExecuteVectorizedPlan(EState *estate, PlanState *planstate, CmdType operation, bool sendTuples,
-    long numberTuples, ScanDirection direction, DestReceiver *dest);
-static bool ExecCheckRTEPerms(RangeTblEntry *rte);
-static bool ExecCheckRTEPermsModified(Oid relOid, Oid userid, Bitmapset *modifiedCols, AclMode requiredPerms);
-void ExecCheckXactReadOnly(PlannedStmt *plannedstmt);
-static void EvalPlanQualStart(EPQState *epqstate, EState *parentestate, Plan *planTree);
+static void ExecuteVectorizedPlan(EState* estate, PlanState* planstate, CmdType operation, bool sendTuples,
+    long numberTuples, ScanDirection direction, DestReceiver* dest);
+static bool ExecCheckRTEPerms(RangeTblEntry* rte);
+static bool ExecCheckRTEPermsModified(Oid relOid, Oid userid, Bitmapset* modifiedCols, AclMode requiredPerms);
+void ExecCheckXactReadOnly(PlannedStmt* plannedstmt);
+static void EvalPlanQualStart(EPQState* epqstate, EState* parentestate, Plan* planTree);
 
 extern char* ExecBuildSlotValueDescription(
-    Oid reloid, TupleTableSlot *slot, TupleDesc tupdesc, Bitmapset *modifiedCols, int maxfieldlen);
+    Oid reloid, TupleTableSlot* slot, TupleDesc tupdesc, Bitmapset* modifiedCols, int maxfieldlen);
 
-extern void BuildStreamFlow(PlannedStmt *plan);
+extern void BuildStreamFlow(PlannedStmt* plan);
 extern void StartUpStreamInParallel(PlannedStmt* pstmt, EState* estate);
 
 extern void CodeGenThreadRuntimeSetup();
@@ -166,15 +167,15 @@ extern bool anls_opt_is_on(AnalysisOpt dfx_opt);
  * send the finish time of insert/update/delete operations to pgstat collector.
  * ----------------------------------------------------------------
  */
-static void report_iud_time(QueryDesc *query)
+static void report_iud_time(QueryDesc* query)
 {
-    ListCell *lc = NULL;
+    ListCell* lc = NULL;
     Oid rid;
     if (u_sess->attr.attr_sql.enable_save_datachanged_timestamp == false) {
         return;
     }
 
-    PlannedStmt *plannedstmt = query->plannedstmt;
+    PlannedStmt* plannedstmt = query->plannedstmt;
 
     foreach (lc, plannedstmt->resultRelations) {
         Index idx = lfirst_int(lc);
@@ -198,7 +199,7 @@ static void report_iud_time(QueryDesc *query)
         PG_CATCH();
         {
             (void)MemoryContextSwitchTo(current_ctx);
-            ErrorData *edata = CopyErrorData();
+            ErrorData* edata = CopyErrorData();
             ereport(DEBUG1, (errmsg("Failed to send data changed time, cause: %s", edata->message)));
             FlushErrorState();
             FreeErrorData(edata);
@@ -244,9 +245,9 @@ void ExecutorStart(QueryDesc* queryDesc, int eflags)
     gstrace_exit(GS_TRC_ID_ExecutorStart);
 }
 
-void standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
+void standard_ExecutorStart(QueryDesc* queryDesc, int eflags)
 {
-    EState *estate = NULL;
+    EState* estate = NULL;
     MemoryContext old_context;
     instr_time starttime;
     double totaltime = 0;
@@ -330,7 +331,7 @@ void standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 
     if (queryDesc->plannedstmt->nParamExec > 0) {
         estate->es_param_exec_vals =
-            (ParamExecData *)palloc0(queryDesc->plannedstmt->nParamExec * sizeof(ParamExecData));
+            (ParamExecData*)palloc0(queryDesc->plannedstmt->nParamExec * sizeof(ParamExecData));
     }
 
     /*
@@ -364,8 +365,9 @@ void standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
             break;
 
         default:
-            ereport(ERROR, (errcode(ERRCODE_UNRECOGNIZED_NODE_TYPE),
-                errmsg("unrecognized operation code: %d", (int)queryDesc->operation)));
+            ereport(ERROR,
+                (errcode(ERRCODE_UNRECOGNIZED_NODE_TYPE),
+                    errmsg("unrecognized operation code: %d", (int)queryDesc->operation)));
             break;
     }
 
@@ -381,7 +383,7 @@ void standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
     if (queryDesc->plannedstmt->MaxBloomFilterNum > 0) {
         int bloom_size = queryDesc->plannedstmt->MaxBloomFilterNum;
         estate->es_bloom_filter.array_size = bloom_size;
-        estate->es_bloom_filter.bfarray = (filter::BloomFilter **)palloc0(bloom_size * sizeof(filter::BloomFilter *));
+        estate->es_bloom_filter.bfarray = (filter::BloomFilter**)palloc0(bloom_size * sizeof(filter::BloomFilter*));
     }
 #ifdef ENABLE_MULTIPLE_NODES
     /* statement always start from CN */
@@ -399,7 +401,7 @@ void standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
     (void)INSTR_TIME_SET_CURRENT(starttime);
 
     IPC_PERFORMANCE_LOG_OUTPUT("standard_ExecutorStart InitPlan start.");
-    InitPlan(queryDesc, eflags);                                        
+    InitPlan(queryDesc, eflags);
     IPC_PERFORMANCE_LOG_OUTPUT("standard_ExecutorStart InitPlan end.");
     totaltime += elapsed_time(&starttime);
 
@@ -409,7 +411,7 @@ void standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
     if (estate->es_instrument != INSTRUMENT_NONE && StreamTopConsumerAmI() && u_sess->instr_cxt.global_instr &&
         u_sess->instr_cxt.thread_instr) {
         int node_id = queryDesc->plannedstmt->planTree->plan_node_id - 1;
-        int *m_instrArrayMap = u_sess->instr_cxt.thread_instr->m_instrArrayMap;
+        int* m_instrArrayMap = u_sess->instr_cxt.thread_instr->m_instrArrayMap;
 
         u_sess->instr_cxt.thread_instr->m_instrArray[m_instrArrayMap[node_id]].instr.instruPlanData.init_time =
             totaltime;
@@ -455,7 +457,7 @@ void standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
  * ----------------------------------------------------------------
  */
 /* 执行器运行 */
-void ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count)
+void ExecutorRun(QueryDesc* queryDesc, ScanDirection direction, long count)
 {
     /* sql active feature, opeartor history statistics */
     int instrument_option = 0;
@@ -466,9 +468,9 @@ void ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count)
     }
     exec_explain_plan(queryDesc);
     if (u_sess->attr.attr_resource.use_workload_manager &&
-        u_sess->attr.attr_resource.resource_track_level == RESOURCE_TRACK_OPERATOR && 
-        queryDesc != NULL && queryDesc->plannedstmt != NULL &&
-        queryDesc->plannedstmt->is_stream_plan && u_sess->exec_cxt.need_track_resource) {
+        u_sess->attr.attr_resource.resource_track_level == RESOURCE_TRACK_OPERATOR && queryDesc != NULL &&
+        queryDesc->plannedstmt != NULL && queryDesc->plannedstmt->is_stream_plan &&
+        u_sess->exec_cxt.need_track_resource) {
 #ifdef STREAMPLAN
         if (queryDesc->instrument_options) {
             instrument_option = queryDesc->instrument_options;
@@ -496,7 +498,7 @@ void ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count)
         (has_track_operator || (IS_PGXC_DATANODE && queryDesc->instrument_options))) {
         can_operator_history_statistics = true;
     }
-    
+
     if (can_operator_history_statistics) {
         ExplainNodeFinish(queryDesc->planstate, NULL, (TimestampTz)0.0, true);
     }
@@ -518,7 +520,7 @@ void ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count)
     /* SQL 自调优: 查询执行完毕时，基于运行时信息分析查询计划问题 */
     if (u_sess->exec_cxt.need_track_resource && queryDesc != NULL && has_track_operator &&
         (IS_PGXC_COORDINATOR || IS_SINGLE_NODE)) {
-        List *issue_results = PlanAnalyzerOperator(queryDesc, queryDesc->planstate);
+        List* issue_results = PlanAnalyzerOperator(queryDesc, queryDesc->planstate);
 
         /* If plan issue is found, store it in sysview gs_wlm_session_history */
         if (issue_results != NIL) {
@@ -544,11 +546,11 @@ void ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count)
     u_sess->pcache_cxt.cur_stmt_name = old_stmt_name;
 }
 
-void standard_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long count)
+void standard_ExecutorRun(QueryDesc* queryDesc, ScanDirection direction, long count)
 {
-    EState *estate = NULL;
+    EState* estate = NULL;
     CmdType operation;
-    DestReceiver *dest = NULL;
+    DestReceiver* dest = NULL;
     bool send_tuples = false;
     MemoryContext old_context;
     instr_time starttime;
@@ -565,11 +567,11 @@ void standard_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long co
      */
     old_context = MemoryContextSwitchTo(estate->es_query_cxt);
 
-    //CHANGEME
+    // CHANGEME
     // if(queryDesc->onGPU == ONGPU){
-	// 	gpuExec(queryDesc);
-	// 	return;
-	// }
+    // 	gpuExec(queryDesc);
+    // 	return;
+    // }
 
     /*
      * Generate machine code for this query.
@@ -627,8 +629,14 @@ void standard_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long co
             ExecuteVectorizedPlan(estate, queryDesc->planstate, operation, send_tuples, count, direction, dest);
         } else {
 #ifdef ENABLE_MOT
-            ExecutePlan(estate, queryDesc->planstate, operation, send_tuples,
-                count, direction, dest, queryDesc->mot_jit_context);
+            ExecutePlan(estate,
+                queryDesc->planstate,
+                operation,
+                send_tuples,
+                count,
+                direction,
+                dest,
+                queryDesc->mot_jit_context);
 #else
             ExecutePlan(estate, queryDesc->planstate, operation, send_tuples, count, direction, dest);  //执行计划
 #endif
@@ -639,8 +647,8 @@ void standard_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long co
     queryDesc->executed = true;
 
     /*
-    *  if current plan is working for expression, no need to collect instrumentation.
-    */
+     *  if current plan is working for expression, no need to collect instrumentation.
+     */
     if (estate->es_instrument != INSTRUMENT_NONE && StreamTopConsumerAmI() && u_sess->instr_cxt.global_instr &&
         u_sess->instr_cxt.thread_instr) {
         int node_id = queryDesc->plannedstmt->planTree->plan_node_id - 1;
@@ -677,7 +685,7 @@ void standard_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long co
  *
  * ----------------------------------------------------------------
  */
-void ExecutorFinish(QueryDesc *queryDesc)
+void ExecutorFinish(QueryDesc* queryDesc)
 {
     if (ExecutorFinish_hook) {
         (*ExecutorFinish_hook)(queryDesc);
@@ -686,9 +694,9 @@ void ExecutorFinish(QueryDesc *queryDesc)
     }
 }
 
-void standard_ExecutorFinish(QueryDesc *queryDesc)
+void standard_ExecutorFinish(QueryDesc* queryDesc)
 {
-    EState *estate = NULL;
+    EState* estate = NULL;
     MemoryContext old_context;
 
     /* sanity checks */
@@ -733,7 +741,7 @@ void standard_ExecutorFinish(QueryDesc *queryDesc)
  *
  * ----------------------------------------------------------------
  */
-void ExecutorEnd(QueryDesc *queryDesc)
+void ExecutorEnd(QueryDesc* queryDesc)
 {
     if (ExecutorEnd_hook) {
         (*ExecutorEnd_hook)(queryDesc);
@@ -756,9 +764,9 @@ int ExecGetPlanNodeid(void)
     return key;
 }
 
-void standard_ExecutorEnd(QueryDesc *queryDesc)
+void standard_ExecutorEnd(QueryDesc* queryDesc)
 {
-    EState *estate = NULL;
+    EState* estate = NULL;
     MemoryContext old_context;
     instr_time starttime;
     double totaltime = 0;
@@ -812,13 +820,13 @@ void standard_ExecutorEnd(QueryDesc *queryDesc)
      * everything the executor has allocated.
      */
     FreeExecutorState(estate);
-    
-    //CHANGEME
+
+    // CHANGEME
     /* Reset queryDesc fields that no longer point to anything */
-	// if(queryDesc->onGPU == ONGPU){
-	// 	gpuStop(queryDesc->context);
-	// 	queryDesc->context = NULL;
-	// }
+    // if(queryDesc->onGPU == ONGPU){
+    // 	gpuStop(queryDesc->context);
+    // 	queryDesc->context = NULL;
+    // }
 
     /* Reset queryDesc fields that no longer point to anything */
     queryDesc->tupDesc = NULL;
@@ -836,7 +844,7 @@ void standard_ExecutorEnd(QueryDesc *queryDesc)
     if (queryDesc->instrument_options != 0 && StreamTopConsumerAmI() && u_sess->instr_cxt.global_instr &&
         u_sess->instr_cxt.thread_instr) {
         int node_id = queryDesc->plannedstmt->planTree->plan_node_id - 1;
-        int *m_instrArrayMap = u_sess->instr_cxt.thread_instr->m_instrArrayMap;
+        int* m_instrArrayMap = u_sess->instr_cxt.thread_instr->m_instrArrayMap;
 
         u_sess->instr_cxt.thread_instr->m_instrArray[m_instrArrayMap[node_id]].instr.instruPlanData.end_time =
             totaltime;
@@ -853,9 +861,9 @@ void standard_ExecutorEnd(QueryDesc *queryDesc)
  * 		to the start.
  * ----------------------------------------------------------------
  */
-void ExecutorRewind(QueryDesc *queryDesc)
+void ExecutorRewind(QueryDesc* queryDesc)
 {
-    EState *estate = NULL;
+    EState* estate = NULL;
     MemoryContext old_context;
 
     /* sanity checks */
@@ -882,9 +890,9 @@ void ExecutorRewind(QueryDesc *queryDesc)
  * Returns true if permissions are adequate.  Otherwise, throws an appropriate
  * error if ereport_on_violation is true, or simply returns false otherwise.
  */
-bool ExecCheckRTPerms(List *rangeTable, bool ereport_on_violation)
+bool ExecCheckRTPerms(List* rangeTable, bool ereport_on_violation)
 {
-    ListCell *l = NULL;
+    ListCell* l = NULL;
     bool result = true;
     gstrace_entry(GS_TRC_ID_ExecCheckRTPerms);
 #ifdef ENABLE_MULTIPLE_NODES
@@ -892,14 +900,15 @@ bool ExecCheckRTPerms(List *rangeTable, bool ereport_on_violation)
     char* ts_relname = NULL;
 #endif
     foreach (l, rangeTable) {
-        RangeTblEntry *rte = (RangeTblEntry *)lfirst(l);
+        RangeTblEntry* rte = (RangeTblEntry*)lfirst(l);
 #ifdef ENABLE_MULTIPLE_NODES
         /* As the inner table of timeseries table that the tag rel can be skipped */
         if (with_ts_rel && rte->relname != NULL &&
             strncmp(rte->relname, TsConf::TAG_TABLE_NAME_PREFIX, strlen(TsConf::TAG_TABLE_NAME_PREFIX)) == 0) {
             /* check from the next position after ts# */
             if (strncmp(strchr(rte->relname + strlen(TsConf::TAG_TABLE_NAME_PREFIX), '#') + 1,
-                        ts_relname, strlen(ts_relname)) == 0) {
+                    ts_relname,
+                    strlen(ts_relname)) == 0) {
                 with_ts_rel = false;
                 continue;
             }
@@ -916,8 +925,8 @@ bool ExecCheckRTPerms(List *rangeTable, bool ereport_on_violation)
 #ifdef ENABLE_MULTIPLE_NODES
         } else {
             /* check whether the timeseries table */
-            if (rte->rtekind == RTE_RELATION && list_length(rangeTable) > 1 &&
-                with_ts_rel == false && rte->orientation == REL_TIMESERIES_ORIENTED) {
+            if (rte->rtekind == RTE_RELATION && list_length(rangeTable) > 1 && with_ts_rel == false &&
+                rte->orientation == REL_TIMESERIES_ORIENTED) {
                 with_ts_rel = true;
                 ts_relname = rte->relname;
                 continue;
@@ -937,14 +946,14 @@ bool ExecCheckRTPerms(List *rangeTable, bool ereport_on_violation)
  * ExecCheckRTEPerms
  * 		Check access permissions for a single RTE.
  */
-static bool ExecCheckRTEPerms(RangeTblEntry *rte)
+static bool ExecCheckRTEPerms(RangeTblEntry* rte)
 {
     AclMode requiredPerms;
     AclMode relPerms;
     AclMode remainingPerms;
     Oid rel_oid;
     Oid userid;
-    Bitmapset *tmpset = NULL;
+    Bitmapset* tmpset = NULL;
     int col;
 
     gstrace_entry(GS_TRC_ID_ExecCheckRTEPerms);
@@ -1072,7 +1081,8 @@ static bool ExecCheckRTEPerms(RangeTblEntry *rte)
             return false;
         }
 
-        if ((remainingPerms & ACL_UPDATE) && !ExecCheckRTEPermsModified(rel_oid, userid, rte->updatedCols, ACL_UPDATE)) {
+        if ((remainingPerms & ACL_UPDATE) &&
+            !ExecCheckRTEPermsModified(rel_oid, userid, rte->updatedCols, ACL_UPDATE)) {
             gstrace_exit(GS_TRC_ID_ExecCheckRTEPerms);
             return false;
         }
@@ -1086,7 +1096,7 @@ static bool ExecCheckRTEPerms(RangeTblEntry *rte)
  * 		Check INSERT or UPDATE access permissions for a single RTE (these
  * 		are processed uniformly).
  */
-static bool ExecCheckRTEPermsModified(Oid relOid, Oid userid, Bitmapset *modifiedCols, AclMode requiredPerms)
+static bool ExecCheckRTEPermsModified(Oid relOid, Oid userid, Bitmapset* modifiedCols, AclMode requiredPerms)
 {
     int col = -1;
 
@@ -1123,13 +1133,13 @@ static bool ExecCheckRTEPermsModified(Oid relOid, Oid userid, Bitmapset *modifie
  * tables as well; but an HS slave can't have created any temp tables
  * in the first place, so no need to check that.
  */
-void ExecCheckXactReadOnly(PlannedStmt *plannedstmt)
+void ExecCheckXactReadOnly(PlannedStmt* plannedstmt)
 {
-    ListCell *l = NULL;
+    ListCell* l = NULL;
 
     /* Fail if write permissions are requested on any non-temp table */
     foreach (l, plannedstmt->rtable) {
-        RangeTblEntry *rte = (RangeTblEntry *)lfirst(l);
+        RangeTblEntry* rte = (RangeTblEntry*)lfirst(l);
 
         if (rte->rtekind != RTE_RELATION) {
             continue;
@@ -1152,7 +1162,7 @@ void ExecCheckXactReadOnly(PlannedStmt *plannedstmt)
             continue;
         }
 
-        PreventCommandIfReadOnly(CreateCommandTag((Node *)plannedstmt));
+        PreventCommandIfReadOnly(CreateCommandTag((Node*)plannedstmt));
     }
 }
 
@@ -1163,16 +1173,16 @@ void ExecCheckXactReadOnly(PlannedStmt *plannedstmt)
  * 		and start up the rule manager
  * ----------------------------------------------------------------
  */
-void InitPlan(QueryDesc *queryDesc, int eflags)
+void InitPlan(QueryDesc* queryDesc, int eflags)
 {
     CmdType operation = queryDesc->operation;
-    PlannedStmt *plannedstmt = queryDesc->plannedstmt;
-    Plan *plan = plannedstmt->planTree;
-    List *rangeTable = plannedstmt->rtable;
-    EState *estate = queryDesc->estate;
-    PlanState *planstate = NULL;
+    PlannedStmt* plannedstmt = queryDesc->plannedstmt;
+    Plan* plan = plannedstmt->planTree;
+    List* rangeTable = plannedstmt->rtable;
+    EState* estate = queryDesc->estate;
+    PlanState* planstate = NULL;
     TupleDesc tupType = NULL;
-    ListCell *l = NULL;
+    ListCell* l = NULL;
     int i;
     bool check = false;
 
@@ -1226,12 +1236,12 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
 #else
     if (plannedstmt->resultRelations && (!StreamThreadAmI() || NeedExecute(plan))) {
 #endif
-        List *resultRelations = plannedstmt->resultRelations;
+        List* resultRelations = plannedstmt->resultRelations;
         int numResultRelations = list_length(resultRelations);
-        ResultRelInfo *resultRelInfos = NULL;
-        ResultRelInfo *resultRelInfo = NULL;
+        ResultRelInfo* resultRelInfos = NULL;
+        ResultRelInfo* resultRelInfo = NULL;
 
-        resultRelInfos = (ResultRelInfo *)palloc(numResultRelations * sizeof(ResultRelInfo));
+        resultRelInfos = (ResultRelInfo*)palloc(numResultRelations * sizeof(ResultRelInfo));
         resultRelInfo = resultRelInfos;
         foreach (l, resultRelations) {
             Index resultRelationIndex = lfirst_int(l);
@@ -1278,10 +1288,10 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
     estate->es_rowMarks = NIL;
     uint64 plan_start_time = time(NULL);
     foreach (l, plannedstmt->rowMarks) {
-        PlanRowMark *rc = (PlanRowMark *)lfirst(l);
+        PlanRowMark* rc = (PlanRowMark*)lfirst(l);
         Oid relid;
         Relation relation = NULL;
-        ExecRowMark *erm = NULL;
+        ExecRowMark* erm = NULL;
 
         /* ignore "parent" rowmarks; they are irrelevant at runtime */
         if (rc->isParent) {
@@ -1301,16 +1311,16 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
                     relation = heap_open(relid, RowShareLock);
                 }
                 break;
-            // case ROW_MARK_KEYSHARE://CHANGEME: should keep it? 
-			// 	relid = getrelid(rc->rti, rangeTable);
-			// 	relation = heap_open(relid, RowShareLock);
-			// 	break;
+            // case ROW_MARK_KEYSHARE://CHANGEME: should keep it?
+            // 	relid = getrelid(rc->rti, rangeTable);
+            // 	relation = heap_open(relid, RowShareLock);
+            // 	break;
             // case ROW_MARK_GPU://CHANGEME
-			// 	relid = getrelid(rc->rti, rangeTable);
-			// 	relation = heap_open(relid, RowShareLock);
-			// 	queryDesc->onGPU = ONGPU;
-			// 	queryDesc->context = (struct clContext *)palloc(sizeof(struct clContext)); 
-			// 	break;
+            // 	relid = getrelid(rc->rti, rangeTable);
+            // 	relation = heap_open(relid, RowShareLock);
+            // 	queryDesc->onGPU = ONGPU;
+            // 	queryDesc->context = (struct clContext *)palloc(sizeof(struct clContext));
+            // 	break;
             case ROW_MARK_REFERENCE:
                 if (IS_PGXC_COORDINATOR || u_sess->pgxc_cxt.PGXCNodeId < 0 ||
                     bms_is_member(u_sess->pgxc_cxt.PGXCNodeId, rc->bms_nodeids)) {
@@ -1323,8 +1333,9 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
                 /* there's no real table here ... */
                 break;
             default:
-                ereport(ERROR, (errcode(ERRCODE_UNRECOGNIZED_NODE_TYPE),
-                    errmsg("unrecognized markType: %d when initializing query plan.", rc->markType)));
+                ereport(ERROR,
+                    (errcode(ERRCODE_UNRECOGNIZED_NODE_TYPE),
+                        errmsg("unrecognized markType: %d when initializing query plan.", rc->markType)));
                 break;
         }
 
@@ -1333,7 +1344,7 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
             CheckValidRowMarkRel(relation, rc->markType);
         }
 
-        erm = (ExecRowMark *)palloc(sizeof(ExecRowMark));
+        erm = (ExecRowMark*)palloc(sizeof(ExecRowMark));
         erm->relation = relation;
         erm->rti = rc->rti;
         erm->prti = rc->prti;
@@ -1348,7 +1359,9 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
     if ((plan_end_time - plan_start_time) > THREAD_INTSERVAL_60S) {
         ereport(WARNING,
             (errmsg("InitPlan foreach plannedstmt->rowMarks takes %lus, plan_start_time:%lus, plan_end_time:%lus.",
-            plan_end_time - plan_start_time, plan_start_time, plan_end_time)));
+                plan_end_time - plan_start_time,
+                plan_start_time,
+                plan_end_time)));
     }
 
     /*
@@ -1380,8 +1393,9 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
             /* too many collect info now, ignore this time. */
             estate->es_can_realtime_statistics = true;
         } else {
-            ereport(LOG, (errmsg("Too many realtime info in the memory, current realtime record num is %d.",
-                current_realtime_num)));
+            ereport(LOG,
+                (errmsg(
+                    "Too many realtime info in the memory, current realtime record num is %d.", current_realtime_num)));
         }
 
         int current_collectinfo_num = hash_get_num_entries(g_operator_table.collected_info_hashtbl);
@@ -1389,8 +1403,9 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
             /* too many collect info now, ignore this time. */
             estate->es_can_history_statistics = true;
         } else {
-            ereport(LOG, (errmsg("Too many history info in the memory, current history record num is %d.",
-                current_collectinfo_num)));
+            ereport(LOG,
+                (errmsg("Too many history info in the memory, current history record num is %d.",
+                    current_collectinfo_num)));
         }
         u_sess->instr_cxt.operator_plan_number = plannedstmt->num_plannodes;
     }
@@ -1418,7 +1433,9 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
         if ((stream_end_time - stream_start_time) > THREAD_INTSERVAL_60S) {
             ereport(WARNING,
                 (errmsg("BuildStreamFlow stream_start_time:%lu,stream_end_time:%lu, BuildStreamFlow takes %lus.",
-                stream_start_time, stream_end_time, (stream_end_time - stream_start_time))));
+                    stream_start_time,
+                    stream_end_time,
+                    (stream_end_time - stream_start_time))));
         }
     }
 
@@ -1431,8 +1448,8 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
 
     i = 1; /* subplan indices count from 1 */
     foreach (l, plannedstmt->subplans) {
-        Plan *subplan = (Plan *)lfirst(l);
-        PlanState *subplanstate = NULL;
+        Plan* subplan = (Plan*)lfirst(l);
+        PlanState* subplanstate = NULL;
         int sp_eflags;
 
         /*
@@ -1451,18 +1468,20 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
          */
         if (subplan && (plannedstmt->subplan_ids == NIL ||
 #ifdef ENABLE_MULTIPLE_NODES
-            (IS_PGXC_COORDINATOR && list_nth_int(plannedstmt->subplan_ids, i - 1) != 0) ||
+                           (IS_PGXC_COORDINATOR && list_nth_int(plannedstmt->subplan_ids, i - 1) != 0) ||
 #else
-            (StreamTopConsumerAmI() && list_nth_int(plannedstmt->subplan_ids, i - 1) != 0) ||
+                           (StreamTopConsumerAmI() && list_nth_int(plannedstmt->subplan_ids, i - 1) != 0) ||
 #endif
-            plannedstmt->planTree->plan_node_id == list_nth_int(plannedstmt->subplan_ids, i - 1))) {
+                           plannedstmt->planTree->plan_node_id == list_nth_int(plannedstmt->subplan_ids, i - 1))) {
             estate->es_under_subplan = true;
             subplanstate = ExecInitNode(subplan, estate, sp_eflags);
 
             /* Report subplan or recursive union is init */
             if (IS_PGXC_DATANODE && IsA(subplan, RecursiveUnion)) {
-                elog(DEBUG1, "MPP with-recursive init subplan for RecursiveUnion[%d] under top_plannode:[%d]",
-                    subplan->plan_node_id, plannedstmt->planTree->plan_node_id);
+                elog(DEBUG1,
+                    "MPP with-recursive init subplan for RecursiveUnion[%d] under top_plannode:[%d]",
+                    subplan->plan_node_id,
+                    plannedstmt->planTree->plan_node_id);
             }
 
             estate->es_under_subplan = false;
@@ -1503,10 +1522,10 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
      */
     if (operation == CMD_SELECT) {
         bool junk_filter_needed = false;
-        ListCell *tlist = NULL;
+        ListCell* tlist = NULL;
 
         foreach (tlist, plan->targetlist) {
-            TargetEntry *tle = (TargetEntry *)lfirst(tlist);
+            TargetEntry* tle = (TargetEntry*)lfirst(tlist);
 
             if (tle->resjunk) {
                 junk_filter_needed = true;
@@ -1523,9 +1542,10 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
         }
 
         if (junk_filter_needed) {
-            JunkFilter *j = NULL;
+            JunkFilter* j = NULL;
 
-            j = ExecInitJunkFilter(planstate->plan->targetlist, tupType->tdhasoid, ExecInitExtraTupleSlot(estate), tupType->tdTableAmType);
+            j = ExecInitJunkFilter(
+                planstate->plan->targetlist, tupType->tdhasoid, ExecInitExtraTupleSlot(estate), tupType->tdTableAmType);
             estate->es_junkFilter = j;
 
             /* Want to return the cleaned tuple type */
@@ -1536,22 +1556,16 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
     queryDesc->tupDesc = tupType;
     queryDesc->planstate = planstate;
 
-    //CHANGEME 初始化GPU设备（OpenCL）以及查询计划
+    // CHANGEME 初始化GPU设备（OpenCL）以及查询计划
     // if(queryDesc->onGPU == ONGPU)
-	// 	gpuStart(queryDesc);
+    // 	gpuStart(queryDesc);
 
-
-    if (plannedstmt->num_streams > 0 && !StreamThreadAmI() &&
-        !(eflags & EXEC_FLAG_EXPLAIN_ONLY)) {
+    if (plannedstmt->num_streams > 0 && !StreamThreadAmI() && !(eflags & EXEC_FLAG_EXPLAIN_ONLY)) {
         /* init stream thread in parallel */
         StartUpStreamInParallel(queryDesc->plannedstmt, queryDesc->estate);
     }
 
     gstrace_exit(GS_TRC_ID_InitPlan);
-
-
-
-    
 }
 
 /*
@@ -1566,52 +1580,58 @@ void InitPlan(QueryDesc *queryDesc, int eflags)
  */
 void CheckValidResultRel(Relation resultRel, CmdType operation)
 {
-    TriggerDesc *trigDesc = resultRel->trigdesc;
-    FdwRoutine *fdwroutine = NULL;
+    TriggerDesc* trigDesc = resultRel->trigdesc;
+    FdwRoutine* fdwroutine = NULL;
 
     switch (resultRel->rd_rel->relkind) {
         case RELKIND_RELATION:
             /* OK */
             break;
         case RELKIND_SEQUENCE:
-            ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                errmsg("cannot change sequence \"%s\"", RelationGetRelationName(resultRel))));
+            ereport(ERROR,
+                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
+                    errmsg("cannot change sequence \"%s\"", RelationGetRelationName(resultRel))));
             break;
         case RELKIND_TOASTVALUE:
-            ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                errmsg("cannot change TOAST relation \"%s\"", RelationGetRelationName(resultRel))));
+            ereport(ERROR,
+                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
+                    errmsg("cannot change TOAST relation \"%s\"", RelationGetRelationName(resultRel))));
             break;
         case RELKIND_VIEW:
         case RELKIND_CONTQUERY:
             switch (operation) {
                 case CMD_INSERT:
                     if (trigDesc == NULL || !trigDesc->trig_insert_instead_row) {
-                        ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-                            errmsg("cannot insert into view \"%s\"", RelationGetRelationName(resultRel)),
-                            errhint("You need an unconditional ON INSERT DO INSTEAD rule or an INSTEAD OF INSERT "
-                            "trigger.")));
+                        ereport(ERROR,
+                            (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+                                errmsg("cannot insert into view \"%s\"", RelationGetRelationName(resultRel)),
+                                errhint("You need an unconditional ON INSERT DO INSTEAD rule or an INSTEAD OF INSERT "
+                                        "trigger.")));
                     }
 
                     break;
                 case CMD_UPDATE:
                     if (trigDesc == NULL || !trigDesc->trig_update_instead_row) {
-                        ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-                            errmsg("cannot update view \"%s\"", RelationGetRelationName(resultRel)),
-                            errhint("You need an unconditional ON UPDATE DO INSTEAD rule or an INSTEAD OF UPDATE "
-                            "trigger.")));
+                        ereport(ERROR,
+                            (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+                                errmsg("cannot update view \"%s\"", RelationGetRelationName(resultRel)),
+                                errhint("You need an unconditional ON UPDATE DO INSTEAD rule or an INSTEAD OF UPDATE "
+                                        "trigger.")));
                     }
                     break;
                 case CMD_DELETE:
                     if (trigDesc == NULL || !trigDesc->trig_delete_instead_row) {
-                        ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-                            errmsg("cannot delete from view \"%s\"", RelationGetRelationName(resultRel)),
-                            errhint("You need an unconditional ON DELETE DO INSTEAD rule or an INSTEAD OF DELETE "
-                            "trigger.")));
+                        ereport(ERROR,
+                            (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+                                errmsg("cannot delete from view \"%s\"", RelationGetRelationName(resultRel)),
+                                errhint("You need an unconditional ON DELETE DO INSTEAD rule or an INSTEAD OF DELETE "
+                                        "trigger.")));
                     }
                     break;
                 default:
-                    ereport(ERROR, (errcode(ERRCODE_UNRECOGNIZED_NODE_TYPE),
-                        errmsg("unrecognized CmdType: %d when perform operations on view.", (int)operation)));
+                    ereport(ERROR,
+                        (errcode(ERRCODE_UNRECOGNIZED_NODE_TYPE),
+                            errmsg("unrecognized CmdType: %d when perform operations on view.", (int)operation)));
                     break;
             }
             break;
@@ -1624,46 +1644,58 @@ void CheckValidResultRel(Relation resultRel, CmdType operation)
             switch (operation) {
                 case CMD_INSERT:
                     if (fdwroutine->ExecForeignInsert == NULL) {
-                        ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-                            errmsg("cannot insert into foreign table \"%s\"", RelationGetRelationName(resultRel))));
+                        ereport(ERROR,
+                            (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                                errmsg("cannot insert into foreign table \"%s\"", RelationGetRelationName(resultRel))));
                     }
                     if (fdwroutine->IsForeignRelUpdatable != NULL &&
                         (fdwroutine->IsForeignRelUpdatable(resultRel) & (1 << CMD_INSERT)) == 0) {
-                        ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-                            errmsg("foreign table \"%s\" does not allow inserts", RelationGetRelationName(resultRel))));
+                        ereport(ERROR,
+                            (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+                                errmsg("foreign table \"%s\" does not allow inserts",
+                                    RelationGetRelationName(resultRel))));
                     }
                     break;
                 case CMD_UPDATE:
                     if (fdwroutine->ExecForeignUpdate == NULL) {
-                        ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-                            errmsg("cannot update foreign table \"%s\"", RelationGetRelationName(resultRel))));
+                        ereport(ERROR,
+                            (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                                errmsg("cannot update foreign table \"%s\"", RelationGetRelationName(resultRel))));
                     }
                     if (fdwroutine->IsForeignRelUpdatable != NULL &&
                         (fdwroutine->IsForeignRelUpdatable(resultRel) & (1 << CMD_UPDATE)) == 0) {
-                        ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-                            errmsg("foreign table \"%s\" does not allow updates", RelationGetRelationName(resultRel))));
+                        ereport(ERROR,
+                            (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+                                errmsg("foreign table \"%s\" does not allow updates",
+                                    RelationGetRelationName(resultRel))));
                     }
                     break;
                 case CMD_DELETE:
                     if (fdwroutine->ExecForeignDelete == NULL) {
-                        ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-                            errmsg("cannot delete from foreign table \"%s\"", RelationGetRelationName(resultRel))));
+                        ereport(ERROR,
+                            (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                                errmsg("cannot delete from foreign table \"%s\"", RelationGetRelationName(resultRel))));
                     }
                     if (fdwroutine->IsForeignRelUpdatable != NULL &&
                         (fdwroutine->IsForeignRelUpdatable(resultRel) & (1 << CMD_DELETE)) == 0) {
-                        ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-                            errmsg("foreign table \"%s\" does not allow deletes", RelationGetRelationName(resultRel))));
+                        ereport(ERROR,
+                            (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+                                errmsg("foreign table \"%s\" does not allow deletes",
+                                    RelationGetRelationName(resultRel))));
                     }
                     break;
                 default:
-                    ereport(ERROR, (errcode(ERRCODE_UNRECOGNIZED_NODE_TYPE),
-                        errmsg("unrecognized CmdType: %d when perform operation on foreign table.", (int)operation)));
+                    ereport(ERROR,
+                        (errcode(ERRCODE_UNRECOGNIZED_NODE_TYPE),
+                            errmsg(
+                                "unrecognized CmdType: %d when perform operation on foreign table.", (int)operation)));
                     break;
             }
             break;
         default:
-            ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                errmsg("cannot change relation \"%s\"", RelationGetRelationName(resultRel))));
+            ereport(ERROR,
+                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
+                    errmsg("cannot change relation \"%s\"", RelationGetRelationName(resultRel))));
             break;
     }
 }
@@ -1682,44 +1714,50 @@ static void CheckValidRowMarkRel(Relation rel, RowMarkType markType)
             break;
         case RELKIND_SEQUENCE:
             /* Must disallow this because we don't vacuum sequences */
-            ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                errmsg("cannot lock rows in sequence \"%s\"", RelationGetRelationName(rel))));
+            ereport(ERROR,
+                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
+                    errmsg("cannot lock rows in sequence \"%s\"", RelationGetRelationName(rel))));
             break;
         case RELKIND_TOASTVALUE:
             /* We could allow this, but there seems no good reason to */
-            ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                errmsg("cannot lock rows in TOAST relation \"%s\"", RelationGetRelationName(rel))));
+            ereport(ERROR,
+                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
+                    errmsg("cannot lock rows in TOAST relation \"%s\"", RelationGetRelationName(rel))));
             break;
         case RELKIND_VIEW:
             /* Should not get here */
-            ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                errmsg("cannot lock rows in view \"%s\"", RelationGetRelationName(rel))));
+            ereport(ERROR,
+                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
+                    errmsg("cannot lock rows in view \"%s\"", RelationGetRelationName(rel))));
             break;
         case RELKIND_CONTQUERY:
             /* Should not get here */
-            ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                errmsg("cannot lock rows in contview \"%s\"", RelationGetRelationName(rel))));
+            ereport(ERROR,
+                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
+                    errmsg("cannot lock rows in contview \"%s\"", RelationGetRelationName(rel))));
             break;
         case RELKIND_MATVIEW:
             /* Should not get here */
             ereport(ERROR,
-                    (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                     errmsg("cannot lock rows in materialized view \"%s\"",
-                            RelationGetRelationName(rel))));
+                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
+                    errmsg("cannot lock rows in materialized view \"%s\"", RelationGetRelationName(rel))));
             break;
         case RELKIND_FOREIGN_TABLE:
             /* Should not get here; planner should have used ROW_MARK_COPY */
-            ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                errmsg("cannot lock rows in foreign table \"%s\"", RelationGetRelationName(rel))));
+            ereport(ERROR,
+                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
+                    errmsg("cannot lock rows in foreign table \"%s\"", RelationGetRelationName(rel))));
             break;
         case RELKIND_STREAM:
             /* Should not get here; planner should have used ROW_MARK_COPY */
-            ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                errmsg("cannot lock rows in stream \"%s\"", RelationGetRelationName(rel))));
+            ereport(ERROR,
+                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
+                    errmsg("cannot lock rows in stream \"%s\"", RelationGetRelationName(rel))));
             break;
         default:
-            ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                errmsg("cannot lock rows in relation \"%s\"", RelationGetRelationName(rel))));
+            ereport(ERROR,
+                (errcode(ERRCODE_WRONG_OBJECT_TYPE),
+                    errmsg("cannot lock rows in relation \"%s\"", RelationGetRelationName(rel))));
             break;
     }
 }
@@ -1731,8 +1769,8 @@ static void CheckValidRowMarkRel(Relation rel, RowMarkType markType)
  * that's now in CheckValidResultRel, and it also did ExecOpenIndices if
  * appropriate.  Be sure callers cover those needs.
  */
-void InitResultRelInfo(ResultRelInfo *resultRelInfo, Relation resultRelationDesc, Index resultRelationIndex,
-    int instrument_options)
+void InitResultRelInfo(
+    ResultRelInfo* resultRelInfo, Relation resultRelationDesc, Index resultRelationIndex, int instrument_options)
 {
     errno_t rc = memset_s(resultRelInfo, sizeof(ResultRelInfo), 0, sizeof(ResultRelInfo));
     securec_check(rc, "\0", "\0");
@@ -1748,8 +1786,8 @@ void InitResultRelInfo(ResultRelInfo *resultRelInfo, Relation resultRelationDesc
     if (resultRelInfo->ri_TrigDesc) {
         int n = resultRelInfo->ri_TrigDesc->numtriggers;
 
-        resultRelInfo->ri_TrigFunctions = (FmgrInfo *)palloc0(n * sizeof(FmgrInfo));
-        resultRelInfo->ri_TrigWhenExprs = (List **)palloc0(n * sizeof(List *));
+        resultRelInfo->ri_TrigFunctions = (FmgrInfo*)palloc0(n * sizeof(FmgrInfo));
+        resultRelInfo->ri_TrigWhenExprs = (List**)palloc0(n * sizeof(List*));
         if (instrument_options) {
             resultRelInfo->ri_TrigInstrument = InstrAlloc(n, instrument_options);
         }
@@ -1758,8 +1796,8 @@ void InitResultRelInfo(ResultRelInfo *resultRelInfo, Relation resultRelationDesc
         resultRelInfo->ri_TrigWhenExprs = NULL;
         resultRelInfo->ri_TrigInstrument = NULL;
     }
-    if (resultRelationDesc->rd_rel->relkind == RELKIND_FOREIGN_TABLE
-        || resultRelationDesc->rd_rel->relkind == RELKIND_STREAM) {
+    if (resultRelationDesc->rd_rel->relkind == RELKIND_FOREIGN_TABLE ||
+        resultRelationDesc->rd_rel->relkind == RELKIND_STREAM) {
         resultRelInfo->ri_FdwRoutine = GetFdwRoutineForRelation(resultRelationDesc, true);
     } else {
         resultRelInfo->ri_FdwRoutine = NULL;
@@ -1769,7 +1807,7 @@ void InitResultRelInfo(ResultRelInfo *resultRelInfo, Relation resultRelationDesc
     resultRelInfo->ri_junkFilter = NULL;
     resultRelInfo->ri_projectReturning = NULL;
     resultRelInfo->ri_mergeTargetRTI = 0;
-    resultRelInfo->ri_mergeState = (MergeState *)palloc0(sizeof(MergeState));
+    resultRelInfo->ri_mergeState = (MergeState*)palloc0(sizeof(MergeState));
 }
 
 /*
@@ -1788,11 +1826,11 @@ void InitResultRelInfo(ResultRelInfo *resultRelInfo, Relation resultRelationDesc
  * ANALYZE to report the runtimes of such triggers.)  So we make additional
  * ResultRelInfo's as needed, and save them in es_trig_target_relations.
  */
-ResultRelInfo *ExecGetTriggerResultRel(EState *estate, Oid relid)
+ResultRelInfo* ExecGetTriggerResultRel(EState* estate, Oid relid)
 {
-    ResultRelInfo *rInfo = NULL;
+    ResultRelInfo* rInfo = NULL;
     int nr;
-    ListCell *l = NULL;
+    ListCell* l = NULL;
     Relation rel;
     MemoryContext old_context;
 
@@ -1808,7 +1846,7 @@ ResultRelInfo *ExecGetTriggerResultRel(EState *estate, Oid relid)
     }
     /* Nope, but maybe we already made an extra ResultRelInfo for it */
     foreach (l, estate->es_trig_target_relations) {
-        rInfo = (ResultRelInfo *)lfirst(l);
+        rInfo = (ResultRelInfo*)lfirst(l);
         if (RelationGetRelid(rInfo->ri_RelationDesc) == relid) {
             return rInfo;
         }
@@ -1827,7 +1865,9 @@ ResultRelInfo *ExecGetTriggerResultRel(EState *estate, Oid relid)
      */
     old_context = MemoryContextSwitchTo(estate->es_query_cxt);
     rInfo = makeNode(ResultRelInfo);
-    InitResultRelInfo(rInfo, rel, 0, /* dummy rangetable index */
+    InitResultRelInfo(rInfo,
+        rel,
+        0, /* dummy rangetable index */
         estate->es_instrument);
     estate->es_trig_target_relations = lappend(estate->es_trig_target_relations, rInfo);
     (void)MemoryContextSwitchTo(old_context);
@@ -1871,9 +1911,9 @@ ResultRelInfo *ExecGetTriggerResultRel(EState *estate, Oid relid)
  * descriptor available when this code runs; we have to look aside at the
  * flags passed to ExecutorStart().
  */
-bool ExecContextForcesOids(PlanState *planstate, bool *hasoids)
+bool ExecContextForcesOids(PlanState* planstate, bool* hasoids)
 {
-    ResultRelInfo *ri = planstate->state->es_result_relation_info;
+    ResultRelInfo* ri = planstate->state->es_result_relation_info;
 
     if (ri != NULL) {
         Relation rel = ri->ri_RelationDesc;
@@ -1902,9 +1942,9 @@ bool ExecContextForcesOids(PlanState *planstate, bool *hasoids)
  * 		Give plan nodes a final chance to execute before shutdown
  * ----------------------------------------------------------------
  */
-static void ExecPostprocessPlan(EState *estate)
+static void ExecPostprocessPlan(EState* estate)
 {
-    ListCell *lc = NULL;
+    ListCell* lc = NULL;
 
     /*
      * Make sure nodes run forward.
@@ -1917,11 +1957,11 @@ static void ExecPostprocessPlan(EState *estate)
      * such nodes have predictable results.)
      */
     foreach (lc, estate->es_auxmodifytables) {
-        PlanState *ps = (PlanState *)lfirst(lc);
+        PlanState* ps = (PlanState*)lfirst(lc);
 
         if (!ps->vectorized) {
             for (;;) {
-                TupleTableSlot *slot = NULL;
+                TupleTableSlot* slot = NULL;
 
                 /* Reset the per-output-tuple exprcontext each time */
                 ResetPerTupleExprContext(estate);
@@ -1934,7 +1974,7 @@ static void ExecPostprocessPlan(EState *estate)
             }
         } else {
             for (;;) {
-                VectorBatch *batch = NULL;
+                VectorBatch* batch = NULL;
 
                 /* Reset the per-output-tuple exprcontext */
                 ResetPerTupleExprContext(estate);
@@ -1964,11 +2004,11 @@ static void ExecPostprocessPlan(EState *estate)
  * tuple tables must be cleared or dropped to ensure pins are released.
  * ----------------------------------------------------------------
  */
-static void ExecEndPlan(PlanState *planstate, EState *estate)
+static void ExecEndPlan(PlanState* planstate, EState* estate)
 {
-    ResultRelInfo *resultRelInfo = NULL;
+    ResultRelInfo* resultRelInfo = NULL;
     int i;
-    ListCell *l = NULL;
+    ListCell* l = NULL;
 
     /*
      * shut down the node-type-specific query processing
@@ -1979,7 +2019,7 @@ static void ExecEndPlan(PlanState *planstate, EState *estate)
      * for subplans too
      */
     foreach (l, estate->es_subplanstates) {
-        PlanState *subplanstate = (PlanState *)lfirst(l);
+        PlanState* subplanstate = (PlanState*)lfirst(l);
 
         ExecEndNode(subplanstate);
     }
@@ -2013,7 +2053,7 @@ static void ExecEndPlan(PlanState *planstate, EState *estate)
      * likewise close any trigger target relations
      */
     foreach (l, estate->es_trig_target_relations) {
-        resultRelInfo = (ResultRelInfo *)lfirst(l);
+        resultRelInfo = (ResultRelInfo*)lfirst(l);
         /* Close indices and then the relation itself */
         ExecCloseIndices(resultRelInfo);
         heap_close(resultRelInfo->ri_RelationDesc, NoLock);
@@ -2023,7 +2063,7 @@ static void ExecEndPlan(PlanState *planstate, EState *estate)
      * close any relations selected FOR UPDATE/FOR SHARE, again keeping locks
      */
     foreach (l, estate->es_rowMarks) {
-        ExecRowMark *erm = (ExecRowMark *)lfirst(l);
+        ExecRowMark* erm = (ExecRowMark*)lfirst(l);
 
         if (erm->relation) {
             heap_close(erm->relation, NoLock);
@@ -2037,12 +2077,12 @@ static void ExecEndPlan(PlanState *planstate, EState *estate)
  * @param[IN] estate:  working state for an Executor invocation
  * @return: void
  */
-static void ExecCollectMaterialForSubplan(EState *estate)
+static void ExecCollectMaterialForSubplan(EState* estate)
 {
-    ListCell *lc = NULL;
+    ListCell* lc = NULL;
 
     foreach (lc, estate->es_material_of_subplan) {
-        PlanState *node = (PlanState *)lfirst(lc);
+        PlanState* node = (PlanState*)lfirst(lc);
 
         /*
          * If the current materliaze node is recursive-union and the right tree has stream
@@ -2055,7 +2095,7 @@ static void ExecCollectMaterialForSubplan(EState *estate)
 
         if (IsA(node, MaterialState)) {
             for (;;) {
-                TupleTableSlot *slot = NULL;
+                TupleTableSlot* slot = NULL;
 
                 /* Reset the per-output-tuple exprcontext each time */
                 ResetPerTupleExprContext(estate);
@@ -2070,7 +2110,7 @@ static void ExecCollectMaterialForSubplan(EState *estate)
             }
         } else if (IsA(node, VecMaterialState)) {
             for (;;) {
-                VectorBatch *batch = NULL;
+                VectorBatch* batch = NULL;
 
                 /*
                  * Execute the plan and obtain a batch
@@ -2092,7 +2132,7 @@ static void ExecCollectMaterialForSubplan(EState *estate)
  *
  * 		Processes the query plan until we have retrieved 'numberTuples' tuples,
  * 		moving in the specified direction.
- *      
+ *
  *      处理查询计划，直到检索到“numberTuples”元组，按指定方向移动。
  *
  * 		Runs to completion if numberTuples is 0
@@ -2102,14 +2142,14 @@ static void ExecCollectMaterialForSubplan(EState *estate)
  * ----------------------------------------------------------------
  */
 #ifdef ENABLE_MOT
-static void ExecutePlan(EState *estate, PlanState *planstate, CmdType operation, bool sendTuples, long numberTuples,
-    ScanDirection direction, DestReceiver *dest, JitExec::JitContext* motJitContext)
+static void ExecutePlan(EState* estate, PlanState* planstate, CmdType operation, bool sendTuples, long numberTuples,
+    ScanDirection direction, DestReceiver* dest, JitExec::JitContext* motJitContext)
 #else
-static void ExecutePlan(EState *estate, PlanState *planstate, CmdType operation, bool sendTuples, long numberTuples,
-    ScanDirection direction, DestReceiver *dest)
+static void ExecutePlan(EState* estate, PlanState* planstate, CmdType operation, bool sendTuples, long numberTuples,
+    ScanDirection direction, DestReceiver* dest)
 #endif
 {
-    TupleTableSlot *slot = NULL;
+    TupleTableSlot* slot = NULL;
     long current_tuple_count = 0;
     bool stream_instrument = false;
     bool need_sync_step = false;
@@ -2189,10 +2229,10 @@ static void ExecutePlan(EState *estate, PlanState *planstate, CmdType operation,
             slot = ExecProcNode(planstate);
         }
 #else
-        //cxs
-        if(ExecProcNode_hook)
+        // cxs
+        if (ExecProcNode_hook)
             slot = ExecProcNode_hook(planstate);
-        else                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+        else
             slot = unlikely(recursive_early_stop) ? NULL : ExecProcNode(planstate);
 #endif
 
@@ -2203,8 +2243,8 @@ static void ExecutePlan(EState *estate, PlanState *planstate, CmdType operation,
          * If under recursive cte, we need check sync step and do rescan properly
          */
         if (unlikely(need_sync_step) && TupIsNull(slot)) {
-            if (!ExecutePlanSyncProducer(planstate, WITH_RECURSIVE_SYNC_RQSTEP, &recursive_early_stop,
-                &current_tuple_count)) {
+            if (!ExecutePlanSyncProducer(
+                    planstate, WITH_RECURSIVE_SYNC_RQSTEP, &recursive_early_stop, &current_tuple_count)) {
                 /* current iteration step is not finish, continue to the next iteration */
                 continue;
             }
@@ -2215,7 +2255,7 @@ static void ExecutePlan(EState *estate, PlanState *planstate, CmdType operation,
          * process so we just end the loop...
          */
         if (TupIsNull(slot)) {
-            if(!is_saved_recursive_union_plan_nodeid) {
+            if (!is_saved_recursive_union_plan_nodeid) {
                 break;
             }
             ExecEarlyFreeBody(planstate);
@@ -2286,8 +2326,8 @@ static void ExecutePlan(EState *estate, PlanState *planstate, CmdType operation,
     if (estate->es_instrument != INSTRUMENT_NONE && u_sess->instr_cxt.global_instr && StreamTopConsumerAmI() &&
         u_sess->instr_cxt.thread_instr) {
         int64 peak_memory = (uint64)(t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->peakChunksQuery -
-            t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->initMemInChunks)
-            << (chunkSizeInBits - BITS_IN_MB);
+                                     t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->initMemInChunks)
+                            << (chunkSizeInBits - BITS_IN_MB);
         u_sess->instr_cxt.global_instr->SetPeakNodeMemory(planstate->plan->plan_node_id, peak_memory);
     }
 }
@@ -2304,10 +2344,10 @@ static void ExecutePlan(EState *estate, PlanState *planstate, CmdType operation,
  * user can see it
  * ----------------------------------------------------------------
  */
-static void ExecuteVectorizedPlan(EState *estate, PlanState *planstate, CmdType operation, bool sendTuples,
-    long numberTuples, ScanDirection direction, DestReceiver *dest)
+static void ExecuteVectorizedPlan(EState* estate, PlanState* planstate, CmdType operation, bool sendTuples,
+    long numberTuples, ScanDirection direction, DestReceiver* dest)
 {
-    VectorBatch *batch = NULL;
+    VectorBatch* batch = NULL;
     long current_tuple_count;
     bool stream_instrument = false;
 
@@ -2370,7 +2410,6 @@ static void ExecuteVectorizedPlan(EState *estate, PlanState *planstate, CmdType 
             BatchExecFilterJunk(estate->es_junkFilter, batch);
         }
 
-
         if (stream_instrument) {
             t_thrd.pgxc_cxt.GlobalNetInstr = planstate->instrument;
         }
@@ -2410,8 +2449,8 @@ static void ExecuteVectorizedPlan(EState *estate, PlanState *planstate, CmdType 
      */
     if (estate->es_instrument != INSTRUMENT_NONE && u_sess->instr_cxt.global_instr && StreamTopConsumerAmI()) {
         int64 peak_memory = (uint64)(t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->peakChunksQuery -
-            t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->initMemInChunks)
-            << (chunkSizeInBits - BITS_IN_MB);
+                                     t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->initMemInChunks)
+                            << (chunkSizeInBits - BITS_IN_MB);
         u_sess->instr_cxt.global_instr->SetPeakNodeMemory(planstate->plan->plan_node_id, peak_memory);
     }
 }
@@ -2419,14 +2458,14 @@ static void ExecuteVectorizedPlan(EState *estate, PlanState *planstate, CmdType 
 /*
  * ExecRelCheck --- check that tuple meets constraints for result relation
  */
-static const char *ExecRelCheck(ResultRelInfo *resultRelInfo, TupleTableSlot *slot, EState *estate)
+static const char* ExecRelCheck(ResultRelInfo* resultRelInfo, TupleTableSlot* slot, EState* estate)
 {
     Relation rel = resultRelInfo->ri_RelationDesc;
     int ncheck = rel->rd_att->constr->num_check;
-    ConstrCheck *check = rel->rd_att->constr->check;
-    ExprContext *econtext = NULL;
+    ConstrCheck* check = rel->rd_att->constr->check;
+    ExprContext* econtext = NULL;
     MemoryContext oldContext;
-    List *qual = NIL;
+    List* qual = NIL;
     int i;
 
     /*
@@ -2436,11 +2475,11 @@ static const char *ExecRelCheck(ResultRelInfo *resultRelInfo, TupleTableSlot *sl
      */
     if (resultRelInfo->ri_ConstraintExprs == NULL) {
         oldContext = MemoryContextSwitchTo(estate->es_query_cxt);
-        resultRelInfo->ri_ConstraintExprs = (List **)palloc(ncheck * sizeof(List *));
+        resultRelInfo->ri_ConstraintExprs = (List**)palloc(ncheck * sizeof(List*));
         for (i = 0; i < ncheck; i++) {
             /* ExecQual wants implicit-AND form */
-            qual = make_ands_implicit((Expr *)stringToNode(check[i].ccbin));
-            resultRelInfo->ri_ConstraintExprs[i] = (List *)ExecPrepareExpr((Expr *)qual, estate);
+            qual = make_ands_implicit((Expr*)stringToNode(check[i].ccbin));
+            resultRelInfo->ri_ConstraintExprs[i] = (List*)ExecPrepareExpr((Expr*)qual, estate);
         }
         (void)MemoryContextSwitchTo(oldContext);
     }
@@ -2472,14 +2511,14 @@ static const char *ExecRelCheck(ResultRelInfo *resultRelInfo, TupleTableSlot *sl
     return NULL;
 }
 
-void ExecConstraints(ResultRelInfo *resultRelInfo, TupleTableSlot *slot, EState *estate)
+void ExecConstraints(ResultRelInfo* resultRelInfo, TupleTableSlot* slot, EState* estate)
 {
     Relation rel = resultRelInfo->ri_RelationDesc;
     TupleDesc tupdesc = RelationGetDescr(rel);
-    TupleConstr *constr = tupdesc->constr;
-    Bitmapset *modifiedCols = NULL;
-    Bitmapset *insertedCols = NULL;
-    Bitmapset *updatedCols = NULL;
+    TupleConstr* constr = tupdesc->constr;
+    Bitmapset* modifiedCols = NULL;
+    Bitmapset* insertedCols = NULL;
+    Bitmapset* updatedCols = NULL;
     int maxfieldlen = 64;
 
     Assert(constr);
@@ -2492,7 +2531,7 @@ void ExecConstraints(ResultRelInfo *resultRelInfo, TupleTableSlot *slot, EState 
 
         for (attrChk = 1; attrChk <= natts; attrChk++) {
             if (tupdesc->attrs[attrChk - 1]->attnotnull && tableam_tslot_attisnull(slot, attrChk)) {
-                char *val_desc = NULL;
+                char* val_desc = NULL;
 
                 insertedCols = GetInsertedColumns(resultRelInfo, estate);
                 updatedCols = GetUpdatedColumns(resultRelInfo, estate);
@@ -2500,10 +2539,11 @@ void ExecConstraints(ResultRelInfo *resultRelInfo, TupleTableSlot *slot, EState 
                 val_desc =
                     ExecBuildSlotValueDescription(RelationGetRelid(rel), slot, tupdesc, modifiedCols, maxfieldlen);
 
-                ereport(ERROR, (errcode(ERRCODE_NOT_NULL_VIOLATION),
-                    errmsg("null value in column \"%s\" violates not-null constraint",
-                    NameStr(tupdesc->attrs[attrChk - 1]->attname)),
-                    val_desc ? errdetail("Failing row contains %s.", val_desc) : 0));
+                ereport(ERROR,
+                    (errcode(ERRCODE_NOT_NULL_VIOLATION),
+                        errmsg("null value in column \"%s\" violates not-null constraint",
+                            NameStr(tupdesc->attrs[attrChk - 1]->attname)),
+                        val_desc ? errdetail("Failing row contains %s.", val_desc) : 0));
             }
         }
     }
@@ -2512,19 +2552,21 @@ void ExecConstraints(ResultRelInfo *resultRelInfo, TupleTableSlot *slot, EState 
         return;
     }
 
-    const char *failed = ExecRelCheck(resultRelInfo, slot, estate);
+    const char* failed = ExecRelCheck(resultRelInfo, slot, estate);
     if (failed == NULL) {
         return;
     }
 
-    char *val_desc = NULL;
+    char* val_desc = NULL;
     insertedCols = GetInsertedColumns(resultRelInfo, estate);
     updatedCols = GetUpdatedColumns(resultRelInfo, estate);
     modifiedCols = bms_union(insertedCols, updatedCols);
     val_desc = ExecBuildSlotValueDescription(RelationGetRelid(rel), slot, tupdesc, modifiedCols, maxfieldlen);
-    ereport(ERROR, (errcode(ERRCODE_CHECK_VIOLATION),
-        errmsg("new row for relation \"%s\" violates check constraint \"%s\"", RelationGetRelationName(rel), failed),
-        val_desc ? errdetail("Failing row contains %s.", val_desc) : 0));
+    ereport(ERROR,
+        (errcode(ERRCODE_CHECK_VIOLATION),
+            errmsg(
+                "new row for relation \"%s\" violates check constraint \"%s\"", RelationGetRelationName(rel), failed),
+            val_desc ? errdetail("Failing row contains %s.", val_desc) : 0));
 }
 
 /*
@@ -2546,8 +2588,8 @@ void ExecConstraints(ResultRelInfo *resultRelInfo, TupleTableSlot *slot, EState 
  * column involved, that subset will be returned with a key identifying which
  * columns they are.
  */
-char *ExecBuildSlotValueDescription(Oid reloid, TupleTableSlot *slot, TupleDesc tupdesc, Bitmapset *modifiedCols,
-    int maxfieldlen)
+char* ExecBuildSlotValueDescription(
+    Oid reloid, TupleTableSlot* slot, TupleDesc tupdesc, Bitmapset* modifiedCols, int maxfieldlen)
 {
     StringInfoData buf;
     StringInfoData collist;
@@ -2587,7 +2629,7 @@ char *ExecBuildSlotValueDescription(Oid reloid, TupleTableSlot *slot, TupleDesc 
 
     for (i = 0; i < tupdesc->natts; i++) {
         bool column_perm = false;
-        char *val = NULL;
+        char* val = NULL;
         int vallen;
 
         /* ignore dropped columns */
@@ -2666,19 +2708,19 @@ char *ExecBuildSlotValueDescription(Oid reloid, TupleTableSlot *slot, TupleDesc 
 /*
  * ExecFindRowMark -- find the ExecRowMark struct for given rangetable index
  */
-ExecRowMark *ExecFindRowMark(EState *estate, Index rti)
+ExecRowMark* ExecFindRowMark(EState* estate, Index rti)
 {
-    ListCell *lc = NULL;
+    ListCell* lc = NULL;
 
     foreach (lc, estate->es_rowMarks) {
-        ExecRowMark *erm = (ExecRowMark *)lfirst(lc);
+        ExecRowMark* erm = (ExecRowMark*)lfirst(lc);
 
         if (erm->rti == rti) {
             return erm;
         }
     }
-    ereport(ERROR,
-        (errcode(ERRCODE_FETCH_DATA_FAILED), errmsg("failed to find ExecRowMark for rangetable index %u", rti)));
+    ereport(
+        ERROR, (errcode(ERRCODE_FETCH_DATA_FAILED), errmsg("failed to find ExecRowMark for rangetable index %u", rti)));
     return NULL; /* keep compiler quiet */
 }
 
@@ -2689,9 +2731,9 @@ ExecRowMark *ExecFindRowMark(EState *estate, Index rti)
  * input plan node (not planstate node!).  We need the latter to find out
  * the column numbers of the resjunk columns.
  */
-ExecAuxRowMark *ExecBuildAuxRowMark(ExecRowMark *erm, List *targetlist)
+ExecAuxRowMark* ExecBuildAuxRowMark(ExecRowMark* erm, List* targetlist)
 {
-    ExecAuxRowMark *aerm = (ExecAuxRowMark *)palloc0(sizeof(ExecAuxRowMark));
+    ExecAuxRowMark* aerm = (ExecAuxRowMark*)palloc0(sizeof(ExecAuxRowMark));
     char resname[32];
     errno_t rc = 0;
 
@@ -2708,8 +2750,9 @@ ExecAuxRowMark *ExecBuildAuxRowMark(ExecRowMark *erm, List *targetlist)
 
             aerm->toidAttNo = ExecFindJunkAttributeInTlist(targetlist, resname);
             if (!AttributeNumberIsValid(aerm->toidAttNo)) {
-                ereport(ERROR, (errcode(ERRCODE_NULL_JUNK_ATTRIBUTE),
-                    errmsg("could not find tableoid junk %s column when build RowMark", resname)));
+                ereport(ERROR,
+                    (errcode(ERRCODE_NULL_JUNK_ATTRIBUTE),
+                        errmsg("could not find tableoid junk %s column when build RowMark", resname)));
             }
         }
 
@@ -2718,8 +2761,9 @@ ExecAuxRowMark *ExecBuildAuxRowMark(ExecRowMark *erm, List *targetlist)
             securec_check_ss(rc, "\0", "\0");
             aerm->tbidAttNo = ExecFindJunkAttributeInTlist(targetlist, resname);
             if (!AttributeNumberIsValid(aerm->tbidAttNo)) {
-                ereport(ERROR, (errcode(ERRCODE_NULL_JUNK_ATTRIBUTE),
-                    errmsg("could not find bucketid junk %s column when build RowMark", resname)));
+                ereport(ERROR,
+                    (errcode(ERRCODE_NULL_JUNK_ATTRIBUTE),
+                        errmsg("could not find bucketid junk %s column when build RowMark", resname)));
             }
         }
         /* always need ctid for real relations */
@@ -2728,8 +2772,9 @@ ExecAuxRowMark *ExecBuildAuxRowMark(ExecRowMark *erm, List *targetlist)
 
         aerm->ctidAttNo = ExecFindJunkAttributeInTlist(targetlist, resname);
         if (!AttributeNumberIsValid(aerm->ctidAttNo)) {
-            ereport(ERROR, (errcode(ERRCODE_NULL_JUNK_ATTRIBUTE),
-                errmsg("could not find ctid junk %s column when build RowMark", resname)));
+            ereport(ERROR,
+                (errcode(ERRCODE_NULL_JUNK_ATTRIBUTE),
+                    errmsg("could not find ctid junk %s column when build RowMark", resname)));
         }
     } else {
         Assert(erm->markType == ROW_MARK_COPY || erm->markType == ROW_MARK_COPY_DATUM);
@@ -2739,8 +2784,9 @@ ExecAuxRowMark *ExecBuildAuxRowMark(ExecRowMark *erm, List *targetlist)
 
         aerm->wholeAttNo = ExecFindJunkAttributeInTlist(targetlist, resname);
         if (!AttributeNumberIsValid(aerm->wholeAttNo)) {
-            ereport(ERROR, (errcode(ERRCODE_NULL_JUNK_ATTRIBUTE),
-                errmsg("could not find whole-row junk %s column when build RowMark", resname)));
+            ereport(ERROR,
+                (errcode(ERRCODE_NULL_JUNK_ATTRIBUTE),
+                    errmsg("could not find whole-row junk %s column when build RowMark", resname)));
         }
     }
 
@@ -2769,10 +2815,10 @@ ExecAuxRowMark *ExecBuildAuxRowMark(ExecRowMark *erm, List *targetlist)
  * Returns a slot containing the new candidate update/delete tuple, or
  * NULL if we determine we shouldn't process the row.
  */
-TupleTableSlot *EvalPlanQual(EState *estate, EPQState *epqstate, Relation relation, Index rti, ItemPointer tid,
-    TransactionId priorXmax)
+TupleTableSlot* EvalPlanQual(
+    EState* estate, EPQState* epqstate, Relation relation, Index rti, ItemPointer tid, TransactionId priorXmax)
 {
-    TupleTableSlot *slot = NULL;
+    TupleTableSlot* slot = NULL;
     HeapTuple copyTuple;
 
     Assert(rti > 0);
@@ -2780,8 +2826,7 @@ TupleTableSlot *EvalPlanQual(EState *estate, EPQState *epqstate, Relation relati
     /*
      * Get and lock the updated version of the row; if fail, return NULL.
      */
-    copyTuple = heap_lock_updated(estate->es_output_cid, 
-        relation, LockTupleExclusive, tid, priorXmax);
+    copyTuple = heap_lock_updated(estate->es_output_cid, relation, LockTupleExclusive, tid, priorXmax);
 
     if (copyTuple == NULL) {
         return NULL;
@@ -2927,9 +2972,11 @@ HeapTuple heap_lock_updated(CommandId cid, Relation relation, int lockmode, Item
                 ReleaseBuffer(buffer);
 
                 if (!u_sess->attr.attr_common.allow_concurrent_tuple_update)
-                    ereport(ERROR, (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
-                        errmsg("abort transaction due to concurrent update"),
-                        errhint("Try to turn on GUC allow_concurrent_tuple_update if concurrent update is expected.")));
+                    ereport(ERROR,
+                        (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
+                            errmsg("abort transaction due to concurrent update"),
+                            errhint(
+                                "Try to turn on GUC allow_concurrent_tuple_update if concurrent update is expected.")));
                 XactLockTableWait(SnapshotDirty.xmax);
                 continue; /* loop back to repeat heap_fetch */
             }
@@ -2954,17 +3001,27 @@ HeapTuple heap_lock_updated(CommandId cid, Relation relation, int lockmode, Item
             /*
              * This is a live tuple, so now try to lock it.
              */
-            test = tableam_tuple_lock(relation, &tuple, &buffer, 
-                                      cid, (LockTupleMode)lockmode, false, &tmfd,
-                                      false, false, false,InvalidSnapshot, NULL, false);
+            test = tableam_tuple_lock(relation,
+                &tuple,
+                &buffer,
+                cid,
+                (LockTupleMode)lockmode,
+                false,
+                &tmfd,
+                false,
+                false,
+                false,
+                InvalidSnapshot,
+                NULL,
+                false);
             /* We now have two pins on the buffer, get rid of one */
             ReleaseBuffer(buffer);
 
             switch (test) {
                 case TM_SelfCreated:
                     ReleaseBuffer(buffer);
-                    ereport(ERROR, (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
-                        errmsg("attempted to lock invisible tuple")));
+                    ereport(ERROR,
+                        (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE), errmsg("attempted to lock invisible tuple")));
                     break;
                 case TM_SelfModified:
                     /* treat it as deleted; do not process */
@@ -2978,8 +3035,9 @@ HeapTuple heap_lock_updated(CommandId cid, Relation relation, int lockmode, Item
                 case TM_Updated:
                     ReleaseBuffer(buffer);
                     if (IsolationUsesXactSnapshot()) {
-                        ereport(ERROR, (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
-                            errmsg("could not serialize access due to concurrent update")));
+                        ereport(ERROR,
+                            (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
+                                errmsg("could not serialize access due to concurrent update")));
                     }
 
                     Assert(!ItemPointerEquals(&tmfd.ctid, &tuple.t_self));
@@ -2993,8 +3051,9 @@ HeapTuple heap_lock_updated(CommandId cid, Relation relation, int lockmode, Item
                 case TM_Deleted:
                     ReleaseBuffer(buffer);
                     if (IsolationUsesXactSnapshot()) {
-                        ereport(ERROR, (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
-                            errmsg("could not serialize access due to concurrent update")));
+                        ereport(ERROR,
+                            (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
+                                errmsg("could not serialize access due to concurrent update")));
                     }
 
                     Assert(ItemPointerEquals(&tmfd.ctid, &tuple.t_self));
@@ -3003,8 +3062,9 @@ HeapTuple heap_lock_updated(CommandId cid, Relation relation, int lockmode, Item
 
                 default:
                     ReleaseBuffer(buffer);
-                    ereport(ERROR, (errcode(ERRCODE_INVALID_TRANSACTION_STATE),
-                        errmsg("unrecognized heap_lock_tuple status: %u", test)));
+                    ereport(ERROR,
+                        (errcode(ERRCODE_INVALID_TRANSACTION_STATE),
+                            errmsg("unrecognized heap_lock_tuple status: %u", test)));
                     return NULL; /* keep compiler quiet */
             }
 
@@ -3035,9 +3095,8 @@ HeapTuple heap_lock_updated(CommandId cid, Relation relation, int lockmode, Item
          * As above, it should be safe to examine xmax and t_ctid without the
          * buffer content lock, because they can't be changing.
          */
-        bool is_null = tuple.t_data == NULL ||
-            !TransactionIdEquals(HeapTupleGetRawXmin(&tuple), priorXmax) ||
-            ItemPointerEquals(&tuple.t_self, &tuple.t_data->t_ctid);
+        bool is_null = tuple.t_data == NULL || !TransactionIdEquals(HeapTupleGetRawXmin(&tuple), priorXmax) ||
+                       ItemPointerEquals(&tuple.t_self, &tuple.t_data->t_ctid);
         if (is_null) {
             /* deleted, so forget about it */
             ReleaseBuffer(buffer);
@@ -3065,7 +3124,7 @@ HeapTuple heap_lock_updated(CommandId cid, Relation relation, int lockmode, Item
  * Note: subplan/auxrowmarks can be NULL/NIL if they will be set later
  * with EvalPlanQualSetPlan.
  */
-void EvalPlanQualInit(EPQState *epqstate, EState *estate, Plan *subplan, List *auxrowmarks, int epqParam)
+void EvalPlanQualInit(EPQState* epqstate, EState* estate, Plan* subplan, List* auxrowmarks, int epqParam)
 {
     /* Mark the EPQ state inactive */
     epqstate->estate = NULL;
@@ -3082,7 +3141,7 @@ void EvalPlanQualInit(EPQState *epqstate, EState *estate, Plan *subplan, List *a
  *
  * We need this so that ModifyTuple can deal with multiple subplans.
  */
-void EvalPlanQualSetPlan(EPQState *epqstate, Plan *subplan, List *auxrowmarks)
+void EvalPlanQualSetPlan(EPQState* epqstate, Plan* subplan, List* auxrowmarks)
 {
     /* If we have a live EPQ query, shut it down */
     EvalPlanQualEnd(epqstate);
@@ -3097,9 +3156,9 @@ void EvalPlanQualSetPlan(EPQState *epqstate, Plan *subplan, List *auxrowmarks)
  *
  * NB: passed tuple must be palloc'd; it may get freed later
  */
-void EvalPlanQualSetTuple(EPQState *epqstate, Index rti, HeapTuple tuple)
+void EvalPlanQualSetTuple(EPQState* epqstate, Index rti, HeapTuple tuple)
 {
-    EState *estate = epqstate->estate;
+    EState* estate = epqstate->estate;
     Assert(rti > 0);
 
     /*
@@ -3116,9 +3175,9 @@ void EvalPlanQualSetTuple(EPQState *epqstate, Index rti, HeapTuple tuple)
 /*
  * Fetch back the current test tuple (if any) for the specified RTI
  */
-HeapTuple EvalPlanQualGetTuple(EPQState *epqstate, Index rti)
+HeapTuple EvalPlanQualGetTuple(EPQState* epqstate, Index rti)
 {
-    EState *estate = epqstate->estate;
+    EState* estate = epqstate->estate;
     Assert(rti > 0);
     return estate->es_epqTuple[rti - 1];
 }
@@ -3128,9 +3187,9 @@ HeapTuple EvalPlanQualGetTuple(EPQState *epqstate, Index rti)
  * to be scanned by an EvalPlanQual operation.	origslot must have been set
  * to contain the current result row (top-level row) that we need to recheck.
  */
-void EvalPlanQualFetchRowMarks(EPQState *epqstate)
+void EvalPlanQualFetchRowMarks(EPQState* epqstate)
 {
-    ListCell *l = NULL;
+    ListCell* l = NULL;
     struct {
         HeapTupleHeaderData hdr;
         char data[MaxHeapTupleSize];
@@ -3142,8 +3201,8 @@ void EvalPlanQualFetchRowMarks(EPQState *epqstate)
     Assert(epqstate->origslot != NULL);
 
     foreach (l, epqstate->arowMarks) {
-        ExecAuxRowMark *aerm = (ExecAuxRowMark *)lfirst(l);
-        ExecRowMark *erm = aerm->rowmark;
+        ExecAuxRowMark* aerm = (ExecAuxRowMark*)lfirst(l);
+        ExecRowMark* erm = aerm->rowmark;
         Datum datum;
         bool isNull = false;
         HeapTupleData tuple;
@@ -3213,8 +3272,9 @@ void EvalPlanQualFetchRowMarks(EPQState *epqstate)
 
                 /* okay, fetch the tuple */
                 if (!tableam_tuple_fetch(fakeRelation, SnapshotAny, &tuple, &buffer, false, NULL)) {
-                    ereport(ERROR, (errcode(ERRCODE_FETCH_DATA_FAILED),
-                        errmsg("failed to fetch tuple for EvalPlanQual recheck from partition relation.")));
+                    ereport(ERROR,
+                        (errcode(ERRCODE_FETCH_DATA_FAILED),
+                            errmsg("failed to fetch tuple for EvalPlanQual recheck from partition relation.")));
                 }
 
                 releaseDummyRelation(&fakeRelation);
@@ -3252,8 +3312,8 @@ void EvalPlanQualFetchRowMarks(EPQState *epqstate)
                 td = DatumGetHeapTupleHeader(datum);
             } else {
                 Assert(erm->markType == ROW_MARK_COPY_DATUM);
-                Datum *data = (Datum *)palloc0(sizeof(Datum) * erm->numAttrs);
-                bool *null = (bool *)palloc0(sizeof(bool) * erm->numAttrs);
+                Datum* data = (Datum*)palloc0(sizeof(Datum) * erm->numAttrs);
+                bool* null = (bool*)palloc0(sizeof(bool) * erm->numAttrs);
                 TupleDesc tupdesc = (TupleDesc)palloc0(sizeof(tupleDesc));
                 for (int i = 0; i < erm->numAttrs; i++) {
                     data[i] = ExecGetJunkAttribute(epqstate->origslot, aerm->wholeAttNo + i, &null[i]);
@@ -3262,7 +3322,7 @@ void EvalPlanQualFetchRowMarks(EPQState *epqstate)
                 tupdesc->attrs = &epqstate->origslot->tts_tupleDescriptor->attrs[aerm->wholeAttNo - 1];
                 tupdesc->tdhasoid = false;
                 tupdesc->tdisredistable = false;
-                td = (HeapTupleHeader)((char *)heap_form_tuple(tupdesc, data, null) + HEAPTUPLESIZE);
+                td = (HeapTupleHeader)((char*)heap_form_tuple(tupdesc, data, null) + HEAPTUPLESIZE);
                 pfree_ext(data);
                 pfree_ext(null);
                 pfree_ext(tupdesc);
@@ -3291,10 +3351,10 @@ void EvalPlanQualFetchRowMarks(EPQState *epqstate)
  *
  * (In practice, there should never be more than one row...)
  */
-TupleTableSlot *EvalPlanQualNext(EPQState *epqstate)
+TupleTableSlot* EvalPlanQualNext(EPQState* epqstate)
 {
     MemoryContext old_context = MemoryContextSwitchTo(epqstate->estate->es_query_cxt);
-    TupleTableSlot *slot = ExecProcNode(epqstate->planstate);
+    TupleTableSlot* slot = ExecProcNode(epqstate->planstate);
     (void)MemoryContextSwitchTo(old_context);
 
     return slot;
@@ -3303,9 +3363,9 @@ TupleTableSlot *EvalPlanQualNext(EPQState *epqstate)
 /*
  * Initialize or reset an EvalPlanQual state tree
  */
-void EvalPlanQualBegin(EPQState *epqstate, EState *parentestate)
+void EvalPlanQualBegin(EPQState* epqstate, EState* parentestate)
 {
-    EState *estate = epqstate->estate;
+    EState* estate = epqstate->estate;
     errno_t rc = 0;
 
     if (estate == NULL) {
@@ -3316,7 +3376,7 @@ void EvalPlanQualBegin(EPQState *epqstate, EState *parentestate)
          * We already have a suitable child EPQ tree, so just reset it.
          */
         int rtsize = list_length(parentestate->es_range_table);
-        PlanState *planstate = epqstate->planstate;
+        PlanState* planstate = epqstate->planstate;
 
         rc = memset_s(estate->es_epqScanDone, rtsize * sizeof(bool), 0, rtsize * sizeof(bool));
         securec_check(rc, "\0", "\0");
@@ -3346,12 +3406,12 @@ void EvalPlanQualBegin(EPQState *epqstate, EState *parentestate)
  * This is a cut-down version of ExecutorStart(): we copy some state from
  * the top-level estate rather than initializing it fresh.
  */
-static void EvalPlanQualStart(EPQState *epqstate, EState *parentestate, Plan *planTree)
+static void EvalPlanQualStart(EPQState* epqstate, EState* parentestate, Plan* planTree)
 {
-    EState *estate = NULL;
+    EState* estate = NULL;
     int rtsize;
     MemoryContext old_context;
-    ListCell *l = NULL;
+    ListCell* l = NULL;
 
     rtsize = list_length(parentestate->es_range_table);
 
@@ -3399,7 +3459,7 @@ static void EvalPlanQualStart(EPQState *epqstate, EState *parentestate, Plan *pl
     if (parentestate->es_plannedstmt->nParamExec > 0) {
         int i = parentestate->es_plannedstmt->nParamExec;
 
-        estate->es_param_exec_vals = (ParamExecData *)palloc0(i * sizeof(ParamExecData));
+        estate->es_param_exec_vals = (ParamExecData*)palloc0(i * sizeof(ParamExecData));
         while (--i >= 0) {
             /* copy value if any, but not execPlan link */
             estate->es_param_exec_vals[i].value = parentestate->es_param_exec_vals[i].value;
@@ -3412,13 +3472,13 @@ static void EvalPlanQualStart(EPQState *epqstate, EState *parentestate, Plan *pl
      * nested EPQ checks they should share es_epqTuple arrays.	This allows
      * sub-rechecks to inherit the values being examined by an outer recheck.
      */
-    estate->es_epqScanDone = (bool *)palloc0(rtsize * sizeof(bool));
+    estate->es_epqScanDone = (bool*)palloc0(rtsize * sizeof(bool));
     if (parentestate->es_epqTuple != NULL) {
         estate->es_epqTuple = parentestate->es_epqTuple;
         estate->es_epqTupleSet = parentestate->es_epqTupleSet;
     } else {
-        estate->es_epqTuple = (HeapTuple *)palloc0(rtsize * sizeof(HeapTuple));
-        estate->es_epqTupleSet = (bool *)palloc0(rtsize * sizeof(bool));
+        estate->es_epqTuple = (HeapTuple*)palloc0(rtsize * sizeof(HeapTuple));
+        estate->es_epqTupleSet = (bool*)palloc0(rtsize * sizeof(bool));
     }
 
     /*
@@ -3436,8 +3496,8 @@ static void EvalPlanQualStart(EPQState *epqstate, EState *parentestate, Plan *pl
      */
     Assert(estate->es_subplanstates == NIL);
     foreach (l, parentestate->es_plannedstmt->subplans) {
-        Plan *subplan = (Plan *)lfirst(l);
-        PlanState *subplanstate = NULL;
+        Plan* subplan = (Plan*)lfirst(l);
+        PlanState* subplanstate = NULL;
 
         estate->es_under_subplan = true;
         subplanstate = ExecInitNode(subplan, estate, 0);
@@ -3465,11 +3525,11 @@ static void EvalPlanQualStart(EPQState *epqstate, EState *parentestate, Plan *pl
  * trigger target relations that got opened, since those are not shared.
  * (There probably shouldn't be any of the latter, but just in case...)
  */
-void EvalPlanQualEnd(EPQState *epqstate)
+void EvalPlanQualEnd(EPQState* epqstate)
 {
-    EState *estate = epqstate->estate;
+    EState* estate = epqstate->estate;
     MemoryContext old_context;
-    ListCell *l = NULL;
+    ListCell* l = NULL;
 
     if (estate == NULL) {
         return; /* idle, so nothing to do */
@@ -3480,7 +3540,7 @@ void EvalPlanQualEnd(EPQState *epqstate)
     ExecEndNode(epqstate->planstate);
 
     foreach (l, estate->es_subplanstates) {
-        PlanState *subplanstate = (PlanState *)lfirst(l);
+        PlanState* subplanstate = (PlanState*)lfirst(l);
 
         ExecEndNode(subplanstate);
     }
@@ -3490,7 +3550,7 @@ void EvalPlanQualEnd(EPQState *epqstate)
 
     /* close any trigger target relations attached to this EState */
     foreach (l, estate->es_trig_target_relations) {
-        ResultRelInfo *resultRelInfo = (ResultRelInfo *)lfirst(l);
+        ResultRelInfo* resultRelInfo = (ResultRelInfo*)lfirst(l);
 
         /* Close indices and then the relation itself */
         ExecCloseIndices(resultRelInfo);
