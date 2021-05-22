@@ -7,16 +7,31 @@
  * @FilePath: /openGauss-server/contrib/GpuJoin/TupleBuffer.cpp
  */
 
-#ifndef TUPLEBUFFER_HEAD_
-#define TUPLEBUFFER_HEAD_
+#ifndef ColBUFFER_HEAD_
+#define ColBUFFER_HEAD_
+#include <vector>
+#include "access/tuptoaster.h"
 
-class TupleBuffer {
+class ColBuffer {
 private:
     static constexpr std::size_t INITIAL_BUFSIZE = 1024UL * 1024UL * 32;
 
     void* buffer;
     std::size_t content_size;
     std::size_t buffer_size;
+
+    /*cxs*/
+
+    // std::vector<Datum> col[10];  // Datum 用的到底对不对？
+
+    Datum* col[10];
+
+    int* attrType;
+    int* attrSize;
+    int* attrTotalSize;
+    int* attrIndex;
+    long tupleNum;
+    int totalAttr;
 
 public:
     TupleBuffer(void)
@@ -45,6 +60,12 @@ public:
         this->buffer = palloc(TupleBuffer::INITIAL_BUFSIZE);
         this->buffer_size = TupleBuffer::INITIAL_BUFSIZE;
         this->content_size = 0;
+
+        for (int i = 0; i < 10; i++) {
+            this->col[i] = palloc(TupleBuffer::INITIAL_BUFSIZE);
+        }
+        this->tupleNum = 0;
+        this->totalAttr = 0;
     }
     void fini(void)
     {
@@ -65,13 +86,32 @@ public:
 
     void putTuple(TupleTableSlot* tts)
     {
-        std::size_t tuple_size = TupleBuffer::getTupleSize(tts);
+        // std::size_t tuple_size = TupleBuffer::getTupleSize(tts);
 
-        while (this->checkOverflow(tuple_size))
-            this->extendBuffer();
+        // while (this->checkOverflow(tuple_size))
+        //     this->extendBuffer();
 
-        std::memcpy(this->getWritePointer(), TupleBuffer::getTupleDataPointer(tts), tuple_size);
-        this->content_size += tuple_size;
+        int ncolumns = tts->tts_tupleDescriptor->natts;
+        Datum* values = (Datum*)palloc(ncolumns * sizeof(Datum));
+        bool* nulls = (bool*)palloc(ncolumns * sizeof(bool));
+
+        heap_deform_tuple(&tts->tts_tuple, tts->tts_tupleDescriptor, values, nulls);
+
+        for (int i = 0; i < ncolumns; i++) {
+            col[i].push_back(values[i]);
+        }
+
+        if (this->tupleNum = 0) {
+            this->totalAttr = ncolumns;
+
+            // this->attrSize = (int*)palloc(sizeof(int) * natts);
+            // this->attrType = (int*)palloc(sizeof(int) * natts);
+            // this->attrIndex = (int*)palloc(sizeof(int) * natts);
+        }
+
+        pfree(values);
+        pfree(nulls);
+        this->tupleNum++;
     }
 
     void* getWritePointer(void) const

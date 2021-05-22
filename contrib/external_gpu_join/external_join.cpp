@@ -65,10 +65,7 @@ static ExecProcNode_hook_type prev_ExecProcNode = NULL;
 
 /* GUC variables */
 /* Flag to use external join module */
-static bool EnableExternalJoin = false;
-/* Address for External Process */
-static char* ExternalAddress = const_cast<char*>("127.0.0.1");
-static int ExternalPort = 59999;
+static bool EnableExternalJoin = true;
 
 /* Initialized pthread_t */
 static pthread_t InitialThread;
@@ -85,12 +82,13 @@ struct ExternalJoinState {
     State state;
 
     /* socket to communicate with external process */
-    int sock;
+    // int sock;
     /* tuple sendeng or result receiving thread */
     pthread_t thread;
 
     /* send buffer queue */
-    TupleBufferQueue tbq;
+    // TupleBufferQueue tbq;
+    ColBufferQueue tbq;  // cxs: may need to save the desc for form tuple
 
     /* result buffer: double buffered */
     DoubleResultBuffer drb;
@@ -141,30 +139,6 @@ void _PG_init(void)
         NULL,
         &EnableExternalJoin,
         false,
-        PGC_USERSET,
-        0,
-        NULL,
-        NULL,
-        NULL);
-
-    DefineCustomIntVariable("external_join.port",
-        "Selects what port external join connects to.",
-        NULL,
-        &ExternalPort,
-        59999,
-        0,
-        65535,
-        PGC_USERSET,
-        0,
-        NULL,
-        NULL,
-        NULL);
-
-    DefineCustomStringVariable("external_join.addr",
-        "Selects where external join connects.",
-        NULL,
-        &ExternalAddress,
-        "127.0.0.1",
         PGC_USERSET,
         0,
         NULL,
@@ -248,14 +222,14 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
             elog(DEBUG5, "BEGIN: Init");
             ejs = InitExternalJoin(ps);
 
-            /* create result receiving thread */
-            CancelPreviousSessionThread();
-            if (::pthread_create(&ejs->thread, NULL, ReceiveResultFromExternal, static_cast<void*>(ejs)) < 0) {
-                ereport(ERROR,
-                    (errcode(ERRCODE_EXTERNAL_ROUTINE_INVOCATION_EXCEPTION),
-                        errmsg("cannot create thread in ::pthread_create()\n")));
-            }
-            SetCurrentSessionThread(ejs->thread);
+            // /* create result receiving thread */
+            // CancelPreviousSessionThread();
+            // if (::pthread_create(&ejs->thread, NULL, ReceiveResultFromExternal, static_cast<void*>(ejs)) < 0) {
+            //     ereport(ERROR,
+            //         (errcode(ERRCODE_EXTERNAL_ROUTINE_INVOCATION_EXCEPTION),
+            //             errmsg("cannot create thread in ::pthread_create()\n")));
+            // }
+            // SetCurrentSessionThread(ejs->thread);
 
             /* wait for first filling result buffer */
             ejs->poffset = 0;
@@ -265,6 +239,8 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
             ejs->state = State::EXEC;
             elog(DEBUG5, "END: Init");
         } else if (ejs->state == State::EXEC) {
+
+            /*开始执行之后，第一次返回一个tuple，然后break，返回单个tuple；下次再调用ExternalExecProcNode还是进入EXEC*/
             elog(DEBUG5, "BEGIN: Exec");
 
             tts = ExecExternalJoin(ps);
@@ -299,21 +275,24 @@ static inline ExternalJoinState* InitExternalJoin(PlanState* ps)
 {
     ExternalJoinState* ejs = SetExternalJoinState(&ps->initPlan, makeExternalJoinState());
 
-    /* connect to external process */
-    ejs->sock = connectSock(ExternalAddress, ExternalPort);
-    if (ejs->sock < 0) {
-        ereport(ERROR,
-            (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("failed to connect %s:%d\n", ExternalAddress, ExternalPort)));
-    }
+    // /* connect to external process */
+    // ejs->sock = connectSock(ExternalAddress, ExternalPort);
+    // if (ejs->sock < 0) {
+    //     ereport(ERROR,
+    //         (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("failed to connect %s:%d\n", ExternalAddress,
+    //         ExternalPort)));
+    // }
 
-    CancelPreviousSessionThread();
-    /* create tuple sending thread */
-    if (::pthread_create(&ejs->thread, NULL, SendTupleToExternal, static_cast<void*>(ejs)) < 0) {
-        ereport(ERROR,
-            (errcode(ERRCODE_EXTERNAL_ROUTINE_INVOCATION_EXCEPTION),
-                errmsg("cannot create thread in ::pthread_create()\n")));
-    }
-    SetCurrentSessionThread(ejs->thread);
+    // CancelPreviousSessionThread();
+    // /* create tuple sending thread */
+    // if (::pthread_create(&ejs->thread, NULL, SendTupleToExternal, static_cast<void*>(ejs)) < 0) {
+    //     ereport(ERROR,
+    //         (errcode(ERRCODE_EXTERNAL_ROUTINE_INVOCATION_EXCEPTION),
+    //             errmsg("cannot create thread in ::pthread_create()\n")));
+    // }
+    // SetCurrentSessionThread(ejs->thread);
+
+    // moveTupletoGPU(ejs);
 
     /* "tuple scan" and "tuple send" are executed concurrently */
     ScanTuple(ps, ejs);
@@ -339,7 +318,7 @@ static inline void EndExternalJoin(PlanState* ps)
 
     ExecFreeExprContext(ps);
     ExecClearTuple(ps->ps_ResultTupleSlot);
-    ::close(ejs->sock);
+    //    ::close(ejs->sock);
     FreeExternalJoinState(ejs);
 }
 
@@ -351,7 +330,7 @@ static inline std::size_t GetAlignedOffset(std::size_t prev, std::size_t size)
 static inline TupleTableSlot* ExecExternalJoin(PlanState* ps)
 {
     ExternalJoinState* ejs = GetExternalJoinState(ps->initPlan);
-    TupleTableSlot* tts = ps->ps_ProjInfo->pi_slot;  // what's the init address?
+    TupleTableSlot* tts = ps->ps_ProjInfo->pi_slot;
     TupleDesc td = tts->tts_tupleDescriptor;
     /* if data sticks out of buffer, use this buffer to merge splitted data */
     uint64_t ovf = 0;
@@ -525,11 +504,12 @@ static void* ReceiveResultFromExternal(void* arg)
 static void* SendTupleToExternal(void* arg)  // change send to gpu
 {
     ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
-    int sock = ejs->sock;
+    //    int sock = ejs->sock;
 
     /* if TupleBufferQueue is finalized, TupleBufferQueue->getLength() returns -1 */
     while (ejs->tbq.getLength() >= 0) {
-        TupleBuffer* tb = ejs->tbq.pop();
+        ColBuffer* tb = ejs->tbq.pop();
+
         std::size_t size;
 
         /* wait for scan completion */
@@ -543,6 +523,7 @@ static void* SendTupleToExternal(void* arg)  // change send to gpu
         sendStrong(sock, &size, sizeof(size));
         /* send tuples to external */
         sendStrong(sock, tb->getBufferPointer(), size);
+
         TupleBuffer::destructor(tb);
     }
     return NULL;
@@ -552,8 +533,10 @@ static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
 {
     if (node == NULL)
         return;
-    if (node->type >= T_ScanState && node->type <= T_CustomScanState) {
-        TupleBuffer* tb = TupleBuffer::constructor();
+    if (node->type >= T_ScanState &&
+        node->type <= T_ForeignScanState) {  // scandate ranges T_ScanState from T_ForeignScanState
+        // TupleBuffer* tb = TupleBuffer::constructor();
+        ColBuffer* tb = ColBuffer::constructor();
 
         elog(DEBUG5, "----- ScanNode [%p] -----", node);
         elog_node_display(DEBUG5, "ScanNode->plan", node->plan, true);

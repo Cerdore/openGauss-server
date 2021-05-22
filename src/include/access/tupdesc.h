@@ -34,8 +34,7 @@ const int NUM_TABLE_AM = 2;
  * for different table types to map access methods in
  * class TableAccessorMethods
  */
-typedef enum tableAmType
-{
+typedef enum tableAmType {
     TAM_INVALID = -1,
     TAM_HEAP = 0,
     TAM_USTORE = 1,
@@ -121,9 +120,9 @@ typedef struct InformationalConstraint {
  * always have tdrefcount >= 0.
  */
 typedef struct tupleDesc {
-    TableAmType tdTableAmType;  /*index for accessing the Table Accessor methods on singleton TableAccessorMethods */
-    int natts; /* number of attributes in the tuple */
-    bool tdisredistable; /* temp table created for data redistribution by the redis tool */
+    TableAmType tdTableAmType; /*index for accessing the Table Accessor methods on singleton TableAccessorMethods */
+    int natts;                 /* tuple的属性个数 number of attributes in the tuple */
+    bool tdisredistable;       /* temp table created for data redistribution by the redis tool */
     Form_pg_attribute* attrs;
     /* attrs[N] is a pointer to the description of Attribute Number N+1 */
     TupleConstr* constr;        /* constraints, or NULL if none */

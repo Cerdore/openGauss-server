@@ -576,7 +576,7 @@ void standard_ExecutorRun(QueryDesc* queryDesc, ScanDirection direction, long co
     /*
      * Generate machine code for this query.
      */
-    if (CodeGenThreadObjectReady()) {
+    if (CodeGenThreadObjectReady()) {  // codeGen
         if (anls_opt_is_on(ANLS_LLVM_COMPILE) && estate->es_instrument > 0) {
             TRACK_START(queryDesc->planstate->plan->plan_node_id, LLVM_COMPILE_TIME);
             CodeGenThreadRuntimeCodeGenerate();
@@ -625,7 +625,7 @@ void standard_ExecutorRun(QueryDesc* queryDesc, ScanDirection direction, long co
      * run plan
      */
     if (!ScanDirectionIsNoMovement(direction)) {
-        if (queryDesc->planstate->vectorized) {
+        if (queryDesc->planstate->vectorized) {  // codeGen 向量化执行
             ExecuteVectorizedPlan(estate, queryDesc->planstate, operation, send_tuples, count, direction, dest);
         } else {
 #ifdef ENABLE_MOT
@@ -2345,7 +2345,7 @@ static void ExecutePlan(EState* estate, PlanState* planstate, CmdType operation,
  * ----------------------------------------------------------------
  */
 static void ExecuteVectorizedPlan(EState* estate, PlanState* planstate, CmdType operation, bool sendTuples,
-    long numberTuples, ScanDirection direction, DestReceiver* dest)
+    long numberTuples, ScanDirection direction, DestReceiver* dest)  // codeGen 向量化执行
 {
     VectorBatch* batch = NULL;
     long current_tuple_count;
