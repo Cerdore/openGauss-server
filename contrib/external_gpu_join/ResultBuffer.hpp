@@ -14,7 +14,9 @@ public:
     static constexpr std::size_t BUFSIZE = 1024UL * 1024UL * 128;
     // static constexpr std::size_t BUFSIZE = 30UL;
 private:
-    void* buffer;
+    struct Result* buffer;
+    int size;
+    int index;
     std::atomic_long content_size;
 
 public:
@@ -41,7 +43,11 @@ public:
 
     void init(void)
     {
-        this->buffer = palloc(ResultBuffer::BUFSIZE);
+        this->size = 100;
+        this->index = 0;
+        this->buffer = (struct Result*)palloc(100 * sizeof(struct Result));
+        // this->buffer = palloc(ResultBuffer::BUFSIZE);
+        // this->buffer = NULL;
         this->content_size.store(0, std::memory_order_relaxed);
     }
     void fini(void)
@@ -49,7 +55,34 @@ public:
         pfree(this->buffer);
         this->content_size.store(0, std::memory_order_relaxed);
     }
-
+    void extendBuffer(void)
+    {
+        this->size *= 2;
+        this->buffer = (struct Result*)repalloc_huge(this->buffer, this->size * sizeof(struct Result));
+    }
+    bool checkOverflow() const
+    {
+        return (this->index + 1 >= this->size);
+    }
+    // void put(int k, double v)
+    void put(int k1, double v1, int k2, double v2)
+    {
+        while (this->checkOverflow())
+            this->extendBuffer();
+        //(this->buffer + this->index) = tp;
+        (this->buffer + this->index)->key1 = k1;
+        (this->buffer + this->index)->dval1 = v1;
+        (this->buffer + this->index)->key2 = k2;
+        (this->buffer + this->index)->dval2 = v2;
+        this->index++;
+    }
+    struct Result* get()
+    {
+        if (this->index <= 0)
+            return NULL;
+        this->index--;
+        return (this->buffer + this->index);
+    }
     void setContentSize(long size)
     {
         this->content_size.store(size, std::memory_order_release);
@@ -60,83 +93,15 @@ public:
         return this->content_size.load(std::memory_order_relaxed);
     }
 
-    void* getBufferPointer(void) const
+    struct Result* getBufferPointer(void) const
     {
         return this->buffer;
     }
 
-    void* operator[](const std::size_t off) const
-    {
-        return static_cast<void*>(static_cast<char*>(this->buffer) + off);
-    }
-};
-
-class DoubleResultBuffer {
-private:
-    ResultBuffer rb[2];
-    std::atomic_int index;
-
-public:
-    DoubleResultBuffer(void)
-    {
-        this->init();
-    }
-    ~DoubleResultBuffer(void)
-    {
-        this->fini();
-    }
-
-    static DoubleResultBuffer* constructor(void)
-    {
-        DoubleResultBuffer* drb = static_cast<DoubleResultBuffer*>(palloc(sizeof(*drb)));
-        drb->init();
-        return drb;
-    }
-    static void destructor(DoubleResultBuffer* drb)
-    {
-        drb->fini();
-        pfree(drb);
-    }
-
-    void init(void)
-    {
-        this->rb[0].init();
-        this->rb[1].init();
-        this->index.store(0, std::memory_order_relaxed);
-        std::atomic_thread_fence(std::memory_order_release);
-    }
-    void fini(void)
-    {
-        this->rb[0].fini();
-        this->rb[1].fini();
-        this->index.store(-1, std::memory_order_relaxed);
-        std::atomic_thread_fence(std::memory_order_release);
-    }
-
-    void switchResultBuffer(void)
-    {
-        this->index.store((this->index.load(std::memory_order_relaxed) + 1) % 2, std::memory_order_release);
-    }
-
-    void changeResultBuffer(int idx)
-    {
-        this->index.store(idx, std::memory_order_release);
-    }
-
-    bool isTerminated(void) const
-    {
-        return (this->index.load(std::memory_order_relaxed) < 0);
-    }
-
-    ResultBuffer* getCurrentResultBuffer(void)
-    {
-        return &this->rb[this->index.load(std::memory_order_relaxed)];
-    }
-
-    ResultBuffer* getNextResultBuffer(void)
-    {
-        return &this->rb[(this->index.load(std::memory_order_relaxed) + 1) % 2];
-    }
+    // void* operator[](const std::size_t off) const
+    // {
+    //     return static_cast<void*>(static_cast<char*>(this->buffer) + off);
+    // }
 };
 
 #endif  // RESULTBUFFER_HEAD_

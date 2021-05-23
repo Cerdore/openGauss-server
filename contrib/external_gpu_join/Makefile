@@ -15,5 +15,5 @@ include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
 
-CXX = g++ -I ../../src/backend
+CXX = g++ -I ../../src/gausskernel
 CXXFLAGS = -fPIC -std=c++11 -Wno-deprecated-register -Wno-deprecated-declarations -Wall

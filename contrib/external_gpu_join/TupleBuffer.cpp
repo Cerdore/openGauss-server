@@ -21,12 +21,12 @@ private:
 
     /*cxs why not use the desc*/
 
-    int* attrType;
-    int* attrSize;
-    int* attrTotalSize;
-    int* attrIndex;
+    // int* attrType;
+    // int* attrSize;
+    // int* attrTotalSize;
+    // int* attrIndex;
     long tupleNum;
-    int totalAttr;
+    // int totalAttr;
 
 public:
     TupleBuffer(void)
@@ -57,7 +57,7 @@ public:
         this->content_size = 0;
 
         this->tupleNum = 0;
-        this->totalAttr = 0;
+        // this->totalAttr = 0;
     }
     void fini(void)
     {
@@ -92,16 +92,17 @@ public:
         并不需要，因为一个buffer中的tuple的属性是一样的
         ，但是size都一样吗！！？
         有了类型不就应该有size了吗...*/
-        if (this->tupleNum = 0) {
-            //    this->totalAttr = get_relnatts(tts->tts_tuple->t_tableOid);
-            int natts = tts->tts_tupleDescriptor->natts;
-            this->totalAttr = natts;
+        // if (this->tupleNum = 0) {
+        //     //    this->totalAttr = get_relnatts(tts->tts_tuple->t_tableOid);
+        //     int natts = tts->tts_tupleDescriptor->natts;
+        //     this->totalAttr = natts;
 
-            this->attrSize = (int*)palloc(sizeof(int) * natts);
-            this->attrType = (int*)palloc(sizeof(int) * natts);
-            this->attrIndex = (int*)palloc(sizeof(int) * natts);
-        }
-        this->attrType[this->tupleNum] = this->tupleNum++;
+        //     this->attrSize = (int*)palloc(sizeof(int) * natts);
+        //     this->attrType = (int*)palloc(sizeof(int) * natts);
+        //     this->attrIndex = (int*)palloc(sizeof(int) * natts);
+        // }
+        // this->attrType[this->tupleNum] = this->tupleNum++;
+        this->tupleNum++;
     }
 
     void* getWritePointer(void) const

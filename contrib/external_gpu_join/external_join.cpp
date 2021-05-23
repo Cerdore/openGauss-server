@@ -68,9 +68,9 @@ static ExecProcNode_hook_type prev_ExecProcNode = NULL;
 static bool EnableExternalJoin = true;
 
 /* Initialized pthread_t */
-static pthread_t InitialThread;
+// static pthread_t InitialThread;
 /* Holds currently running pthread_t, this is used when a query is cancelled */
-static pthread_t PreviousThread;
+// static pthread_t PreviousThread;
 
 /* State for external join */
 /* ExternalExecProcNode() uses PlanState->initPlan field to hold execution state. This is scamped design. */
@@ -87,17 +87,23 @@ struct ExternalJoinState {
     pthread_t thread;
 
     /* send buffer queue */
-    // TupleBufferQueue tbq;
-    ColBufferQueue tbq;  // cxs: may need to save the desc for form tuple
+    TupleBufferQueue tbq;
+    // ColBufferQueue tbq;  // cxs: may need to save the desc for form tuple
 
     /* result buffer: double buffered */
-    DoubleResultBuffer drb;
+    //    DoubleResultBuffer drb;
     /* result buffer which result processing thread currently handles */
-    ResultBuffer* prb;
+    ResultBuffer prb;
     /* offset(cursor) to scan result buffer */
-    std::size_t poffset;
+    // std::size_t poffset;
     /* base offset when an attribute sticks out of buffer */
-    std::size_t pbase;
+    // std::size_t pbase;
+
+    struct Tuple* d_tuple[2];  // poniter for gpu
+    struct Result* d_res;      // pointer for host
+    struct Result* res;
+
+    int T_size[2];  // size of tuple length
 
     /* size of content in result buffer */
     long psize;
@@ -172,13 +178,16 @@ static inline ExternalJoinState* makeExternalJoinState(void)
     ejs->state = State::INIT;
 
     ejs->tbq.init();
+    ejs->prb.init();
 
-    ejs->drb.init();
-    ejs->prb = ejs->drb.getCurrentResultBuffer();
-    ejs->poffset = ResultBuffer::BUFSIZE;
-    ejs->pbase = 0;
+    ejs->T_size[0] = 0;
+    ejs->T_size[1] = 0;
+    //   ejs->drb.init();
+    // ejs->prb = ejs->drb.getCurrentResultBuffer();
+    // ejs->poffset = ResultBuffer::BUFSIZE;
+    // ejs->pbase = 0;
 
-    ejs->psize = 0;
+    // ejs->psize = 0;
 
     return ejs;
 }
@@ -222,20 +231,13 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
             elog(DEBUG5, "BEGIN: Init");
             ejs = InitExternalJoin(ps);
 
-            // /* create result receiving thread */
-            // CancelPreviousSessionThread();
-            // if (::pthread_create(&ejs->thread, NULL, ReceiveResultFromExternal, static_cast<void*>(ejs)) < 0) {
-            //     ereport(ERROR,
-            //         (errcode(ERRCODE_EXTERNAL_ROUTINE_INVOCATION_EXCEPTION),
-            //             errmsg("cannot create thread in ::pthread_create()\n")));
-            // }
-            // SetCurrentSessionThread(ejs->thread);
+            moveResulttoHost(ejs);
+            //            ejs->poffset = 0;
+            // while ((ejs->psize = ejs->prb.getContentSize()) == 0)
+            //     ::usleep(1);
 
-            /* wait for first filling result buffer */
-            ejs->poffset = 0;
-            while ((ejs->psize = ejs->prb->getContentSize()) == 0)
-                ::usleep(1);
-
+            nestLoopJoin(ejs->d_tuple[0], ejs->d_tuple[1], T_size[0], T_size[1], );
+            moveResulttoHost(ejs);
             ejs->state = State::EXEC;
             elog(DEBUG5, "END: Init");
         } else if (ejs->state == State::EXEC) {
@@ -275,27 +277,10 @@ static inline ExternalJoinState* InitExternalJoin(PlanState* ps)
 {
     ExternalJoinState* ejs = SetExternalJoinState(&ps->initPlan, makeExternalJoinState());
 
-    // /* connect to external process */
-    // ejs->sock = connectSock(ExternalAddress, ExternalPort);
-    // if (ejs->sock < 0) {
-    //     ereport(ERROR,
-    //         (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("failed to connect %s:%d\n", ExternalAddress,
-    //         ExternalPort)));
-    // }
-
-    // CancelPreviousSessionThread();
-    // /* create tuple sending thread */
-    // if (::pthread_create(&ejs->thread, NULL, SendTupleToExternal, static_cast<void*>(ejs)) < 0) {
-    //     ereport(ERROR,
-    //         (errcode(ERRCODE_EXTERNAL_ROUTINE_INVOCATION_EXCEPTION),
-    //             errmsg("cannot create thread in ::pthread_create()\n")));
-    // }
-    // SetCurrentSessionThread(ejs->thread);
-
-    // moveTupletoGPU(ejs);
-
-    /* "tuple scan" and "tuple send" are executed concurrently */
     ScanTuple(ps, ejs);
+
+    moveTupletoGPU(ejs);
+
     while (ejs->tbq.getLength() > 0)
         ::usleep(1);
     ejs->tbq.fini();
@@ -307,8 +292,9 @@ static inline ExternalJoinState* InitExternalJoin(PlanState* ps)
     ExecAssignProjectionInfo(ps, NULL);
     ps->ps_TupFromTlist = false;
 
-    ::pthread_join(ejs->thread, NULL);
-    CancelPreviousSessionThread();
+    // ::pthread_join(ejs->thread, NULL);
+    // CancelPreviousSessionThread();
+
     return ejs;
 }
 
@@ -322,6 +308,10 @@ static inline void EndExternalJoin(PlanState* ps)
     FreeExternalJoinState(ejs);
 }
 
+/* prev 应该保存的是上次最后的位置
+如果 prev 不是 size 的倍数，就从下个整数倍的size位置开始
+是的话，返回当前位置
+*/
 static inline std::size_t GetAlignedOffset(std::size_t prev, std::size_t size)
 {
     return (prev % size) ? (prev / size + 1) * size : prev;
@@ -332,24 +322,12 @@ static inline TupleTableSlot* ExecExternalJoin(PlanState* ps)
     ExternalJoinState* ejs = GetExternalJoinState(ps->initPlan);
     TupleTableSlot* tts = ps->ps_ProjInfo->pi_slot;
     TupleDesc td = tts->tts_tupleDescriptor;
-    /* if data sticks out of buffer, use this buffer to merge splitted data */
-    uint64_t ovf = 0;
 
-    /* wait until result buffer will be filled */
-    if (ejs->poffset == ResultBuffer::BUFSIZE) {
-        elog(DEBUG2, ":: ResultBuffer FULL switch");
-        ejs->prb->setContentSize(0);
-        ejs->drb.switchResultBuffer();
-
-        ejs->poffset = 0;
-        ejs->pbase = 0;
-        ejs->prb = ejs->drb.getCurrentResultBuffer();
-        while ((ejs->psize = ejs->prb->getContentSize()) == 0)
-            ::usleep(1);
-        /* EOF */
-        if (ejs->psize < 0)
-            return NULL;
-    } else if (ejs->poffset >= static_cast<std::size_t>(ejs->psize))
+    if (ejs->prb.index <= 0)
+        return NULL;
+    struct Result* res = prb.get();
+    void* tptr = static_cast<void*>(res);
+    if (res == NULL)
         return NULL;
 
     /* check cancel request */
@@ -357,72 +335,38 @@ static inline TupleTableSlot* ExecExternalJoin(PlanState* ps)
 
     /* fill result tuple */
     ExecClearTuple(tts);
+
+    // void* re = static_cast<void*> res;
+    std::size_t off = 0;
     for (int col = 0; col < td->natts; col++) {
         void* ptr;
-
         switch (td->attrs[col]->atttypid) {
             case INT8OID:
             case FLOAT8OID:
-                ejs->poffset = GetAlignedOffset(ejs->poffset, sizeof(double));
-                ptr = (*ejs->prb)[ejs->poffset + ejs->pbase];
-                ejs->poffset += sizeof(double);
+                // ejs->poffset = GetAlignedOffset(ejs->poffset, sizeof(double));
+                ptr = static_cast<void*>(static_cast<char*>(tptr) + off);
+                off += sizeof(double);
+                //                ejs->poffset += sizeof(double);
                 break;
             case INT4OID:
             case FLOAT4OID:
             case OIDOID:
-                ejs->poffset = GetAlignedOffset(ejs->poffset, sizeof(float));
-                ptr = (*ejs->prb)[ejs->poffset + ejs->pbase];
-                ejs->poffset += sizeof(float);
+                ptr = static_cast<void*>(static_cast<char*>(tptr) + off);
+                off += sizeof(float);
                 break;
             case INT2OID:
-                ejs->poffset = GetAlignedOffset(ejs->poffset, sizeof(short));
-                ptr = (*ejs->prb)[ejs->poffset + ejs->pbase];
-                ejs->poffset += sizeof(short);
+                ptr = static_cast<void*>(static_cast<char*>(tptr) + off);
+                off += sizeof(short);
                 break;
             case BOOLOID:
-                ejs->poffset = GetAlignedOffset(ejs->poffset, sizeof(bool));
-                ptr = (*ejs->prb)[ejs->poffset + ejs->pbase];
-                ejs->poffset += sizeof(bool);
+                ptr = static_cast<void*>(static_cast<char*>(tptr) + off);
+                off += sizeof(bool);
                 break;
             default:
                 ereport(ERROR,
                     (errcode(ERRCODE_EXTERNAL_ROUTINE_INVOCATION_EXCEPTION),
                         errmsg("unsupported result type %d.\n", td->attrs[col]->atttypid)));
         };
-
-        /* an attribute sticks out of buffer */
-        if (ejs->poffset + td->attrs[col]->attlen > ResultBuffer::BUFSIZE) {
-            elog(DEBUG2, ":: ResultBuffer HUNGRY switch");
-            int held_size = ResultBuffer::BUFSIZE - ejs->poffset;
-            int remain_size = td->attrs[col]->attlen - held_size;
-            uint64_t held, remain;
-
-            /* get the first part of this attribute */
-            held = bytesExtract(*(static_cast<uint64_t*>(ptr)), held_size - 1);
-
-            /* switch buffer to get the remaining part of the attribute */
-            ejs->prb->setContentSize(0);
-            ejs->drb.switchResultBuffer();
-            ejs->prb = ejs->drb.getCurrentResultBuffer();
-            ejs->poffset = 0;
-            ejs->pbase = remain_size;
-            while ((ejs->psize = ejs->prb->getContentSize()) == 0)
-                usleep(1);
-            if (ejs->psize < 0) {
-                perror("sock 1");
-                ereport(ERROR,
-                    (errcode(ERRCODE_EXTERNAL_ROUTINE_INVOCATION_EXCEPTION),
-                        errmsg("unexpected connection shutdown\n")));
-            }
-
-            /* get the last part of the attribute */
-            remain = bytesExtract(*static_cast<uint64_t*>((*ejs->prb)[0]), remain_size - 1);
-            remain <<= held_size * 8;
-
-            /* merge first and last part of the attribute */
-            ovf = held | remain;
-            ptr = static_cast<void*>(&ovf);
-        }
 
         /* put column data to result tuple */
         switch (td->attrs[col]->atttypid) {
@@ -455,88 +399,14 @@ static inline TupleTableSlot* ExecExternalJoin(PlanState* ps)
     return ExecStoreVirtualTuple(tts);
 }
 
-static void* ReceiveResultFromExternal(void* arg)
-{
-    ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
-    int sock = ejs->sock;
-    DoubleResultBuffer* drb = &ejs->drb;
-    ResultBuffer* rb;
-    long csize;
-
-    rb = drb->getCurrentResultBuffer();
-    for (;;) {
-        ResultBuffer* next_rb;
-
-        /* wait until result buffer will become empty */
-        pthread_testcancel();
-        while ((csize = rb->getContentSize()) != 0) {
-            pthread_testcancel();
-            usleep(1);
-        }
-        /* EOF */
-        if (drb->isTerminated())
-            break;
-
-        /* receive data and fill result buffer */
-        csize = receiveStrong(sock, (*rb)[0], ResultBuffer::BUFSIZE);
-        // printf("thread::csize = %ld\n", csize);
-        /* connection was closed */
-        if (csize == 0) {
-            rb->setContentSize(-1);
-            break;
-        }
-        if (csize < 0) {
-            perror("sock error 2");
-            ereport(ERROR,
-                (errcode(ERRCODE_EXTERNAL_ROUTINE_INVOCATION_EXCEPTION), errmsg("unexpected connection shutdown\n")));
-        }
-
-        rb->setContentSize(csize);
-        next_rb = drb->getNextResultBuffer();
-        if (next_rb == rb)
-            next_rb = drb->getCurrentResultBuffer();
-        rb = next_rb;
-    }
-
-    return NULL;
-}
-
-static void* SendTupleToExternal(void* arg)  // change send to gpu
-{
-    ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
-    //    int sock = ejs->sock;
-
-    /* if TupleBufferQueue is finalized, TupleBufferQueue->getLength() returns -1 */
-    while (ejs->tbq.getLength() >= 0) {
-        ColBuffer* tb = ejs->tbq.pop();
-
-        std::size_t size;
-
-        /* wait for scan completion */
-        pthread_testcancel();
-        if (tb == NULL) {
-            ::usleep(1);
-            continue;
-        }
-        size = tb->getContentSize();
-        /* send tuple buffer size to external */
-        sendStrong(sock, &size, sizeof(size));
-        /* send tuples to external */
-        sendStrong(sock, tb->getBufferPointer(), size);
-
-        TupleBuffer::destructor(tb);
-    }
-    return NULL;
-}
-
 static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
 {
     if (node == NULL)
         return;
     if (node->type >= T_ScanState &&
         node->type <= T_ForeignScanState) {  // scandate ranges T_ScanState from T_ForeignScanState
-        // TupleBuffer* tb = TupleBuffer::constructor();
-        ColBuffer* tb = ColBuffer::constructor();
+        TupleBuffer* tb = TupleBuffer::constructor();
+        // ColBuffer* tb = ColBuffer::constructor();
 
         elog(DEBUG5, "----- ScanNode [%p] -----", node);
         elog_node_display(DEBUG5, "ScanNode->plan", node->plan, true);
@@ -568,19 +438,3 @@ static inline uint64_t bytesExtract(uint64_t x, int n)
         0xFFFFFFFFFFFFFFFF};
     return x & TABLE[n];
 }
-
-static inline void CancelPreviousSessionThread(void)
-{
-    /* cancel previously not cancelled thread */
-    if (!pthread_equal(PreviousThread, InitialThread)) {
-        pthread_cancel(PreviousThread);
-        memcpy(static_cast<void*>(&PreviousThread), static_cast<void*>(&InitialThread), sizeof(InitialThread));
-    }
-}
-
-static inline void SetCurrentSessionThread(pthread_t thread)
-{
-    /* set current thread for later cancel */
-    memcpy(static_cast<void*>(&PreviousThread), static_cast<void*>(&thread), sizeof(InitialThread));
-}
-END_C_SPACE

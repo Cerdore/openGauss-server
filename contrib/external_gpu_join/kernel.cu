@@ -9,6 +9,18 @@ cudaDeviceProp GPUprop;
 ul SupportedKBlocks, SupportedMBlocks, MaxTherPerBlk;
 char SupportedBlocks[100];
 
+struct Tuple {
+    int key;
+    double dval;
+};
+
+struct Result {
+    int key1;
+    double dval1;
+    int key2;
+    double dval2;
+};
+
 /*
 * TODO
 * add 全局数组指针
@@ -52,58 +64,104 @@ __device__ uint32_t hash(uint32_t k)
     return k & (kHashTableCapacity - 1);
 }
 
-std::size_t* p_size[2];
-Datum* GpuColBuffer[10];
-
 void moveTupletoGPU(void* arg)
 {
     ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
 
     /* if TupleBufferQueue is finalized, TupleBufferQueue->getLength() returns -1 */
     int cnt = 0;
+    struct* Tuple d_tuple[2];
     while (ejs->tbq.getLength() >= 0) {
 
-        ColBuffer* tb = ejs->tbq.pop();
+        TupleBuffer* tb = ejs->tbq.pop();
+
         std::size_t size;
 
         /* wait for scan completion */
-        //        pthread_testcancel();
-        if (tb == NULL) {
-            ::usleep(1);
-            continue;
-        }
+        // pthread_testcancel();
+        // if (tb == NULL) {
+        //     ::usleep(1);
+        //     continue;
+        // }
         size = tb->getContentSize();
-        /* send tuple buffer size to external */
-        // sendStrong(sock, &size, sizeof(size));
 
-        int ncol = tb->totalAttr;
-        for (int i = 0; i < ncol; i++) {
-            // for (int j = 0; j < col[i].size(); j++) {
-            //     /*copy data to device*/
-            // }
-            
-            /*暂时忽略类型， Datum 貌似可用， 参见heaptuple.cpp*/
-            cudaStatus[i] = cudaMalloc(&GpuColBuffer[i], col[i].size());
-            if (cudaStatus[i]) {
-            }
-            cuda
+        cudaError_t cudaStatus = cudaMalloc((void**)&d_tuple[cnt], tb->tupleNum * sizeof(Tuple));
+        if (cudaStatus != cudaSuccess) {
+            /*call error func*/
         }
 
-        /*build hash table here?
+        cudaStatus = cudaMemcpy(d_tuple[cnt], tb->getBufferPointer(), size, cudaMemcpyHostToDevice);
+        if (cudaStatus != cudaSuccess) {
+            /*call error func*/
+        }
 
-        然后在Exec：   join 的时候 一条一条探测。
-        */
-        cudaStatus = cudaMalloc((void**)&p_size[cnt], sizeof(std::size_t));
-
-        /* send tuples to external */
-        //    sendStrong(sock, tb->getBufferPointer(), size);
-
-        cudaStatus2 = cudaMalloc((void**)&GpuBuffer[cnt], sizeof(size));
+        ejs->d_tuple[cnt] = d_tuple[cnt];
+        ejs->T_size[cnt] = tb->tupleNum;
         TupleBuffer::destructor(tb);
+
         cnt++;
     }
     return NULL;
 }
 
-void moveTupletoHost()
-{}
+__global__ void nLJ(struct Tuple* d_a, struct Tuple* d_b, long n_a, long n_b, struct Result* res)
+{
+    // int x = threadIdx.x + blockIdx.x * blockDim.x;
+    // int y = threadIdx.y + blockIdx.y * blockDim.y;
+    // if (x < n_a && y < n_b) {
+    //     if (d_a[x].key == d_b[y].key) {
+    //         (*res)->key1 = d_b[x].key;
+    //         res->dval1 = d_a[x].dval;
+    //         res->key2 = d_a[y].key;
+    //         res->dval2 = d_a[y].dval;
+    //     } else
+    //         res = NULL;
+    // }
+    int x = threadIdx.x + blockIdx.x * blockDim.x;
+    if (x >= n_b)
+        return;
+    for (int i = 0; i < n_a; i++) {
+        if (d_b[x].key == d_a[i].key) {
+            (res + i * x)->key1 = d_a[i].key;
+            (res + i * x)->dval1 = d_a[i].dval;
+            (res + i * x)->key2 = d_b[x].key;
+            (res + i * x)->dval2 = d_b[y].dval;
+        } else {
+            (res + i * x)->key1 = -1;
+            (res + i * x)->dval1 = -1;
+            (res + i * x)->key2 = -1;
+            (res + i * x)->dval2 = -1;
+        }
+    }
+}
+
+void moveResulttoHost(void* arg)
+{
+    ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
+    cudaError_t cudaStatus =
+        cudaMemcpy(ejs->res, ejs->d_res, ejs->T_size[0] * ejs->T_size[1] * sizeof(Result), cudaMemcpyDeviceToHost);
+
+    if (cudaStatus != cudaSuccess) {
+        /*call error func*/
+    }
+    for (long i = 0; i < T_size[0] * T_size[1]; i++) {
+        if ((ejs->res + i)->key1 != -1) {
+            ejs->prb->put((ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res + i)->key2, (ejs->res + i)->dval2);
+        }
+    }
+    /*put result to host, then put it to queue*/
+}
+
+void nestLoopJoin(void* arg, struct Tuple* d_a, struct Tuple* d_b, long n_a, long n_b, struct Result* res)
+{
+    ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
+    //    struct Result *res, *d_res;
+    ejs->res = (struct Result*)malloc(ejs->T_size[0] * ejs->T_size[1] * sizeof(Result));
+    cudaError_t cudaStatus = cudaMalloc((void**)&ejs->d_res[cnt], ejs->T_size[0] * ejs->T_size[1] * sizeof(Result));
+
+    nlJ<<<32, 1024>>>(d_a, d_b, n_a, n_b, d_res);
+
+    cudaStatus = cudaDeviceSynchronize();
+
+    // moveResulttoHost(ejs);
+}
