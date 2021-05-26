@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-05-14 03:06:57
- * @LastEditTime: 2021-05-14 13:29:27
+ * @LastEditTime: 2021-05-26 08:19:30
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/GpuJoin/external_join.cpp
@@ -28,8 +28,11 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
-
-BEGIN_C_SPACE
+namespace cuda{
+ #include <cuda_runtime.h>
+ #include <cuda.h>
+}
+//BEGIN_C_SPACE
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -44,7 +47,7 @@ BEGIN_C_SPACE
 #include "executor/executor.h"
 #include "utils/guc.h"
 
-#include "access/htup_details.h"
+//#include "access/htup_details.h"
 #include "utils/memutils.h"
 #include "miscadmin.h"
 #include "catalog/pg_type.h"
@@ -53,7 +56,10 @@ BEGIN_C_SPACE
 #include "TupleBuffer.hpp"
 #include "TupleBufferQueue.hpp"
 #include "ResultBuffer.hpp"
-#include "socket_lapper.hpp"
+#include "socket_plapper.hpp"
+//#include "cuda.h"
+//#include "cuda_runtime.h"
+// #include "device_launch_parameters.h"
 
 PG_MODULE_MAGIC;
 
@@ -191,6 +197,8 @@ void _PG_fini(void)
 
 static inline ExternalJoinState* makeExternalJoinState(void)
 {
+    int *a;
+    cuda::cudaMalloc((void**)&a, sizeof(int));
     ExternalJoinState* ejs;
 
     ejs = static_cast<ExternalJoinState*>(palloc(sizeof(*ejs)));
@@ -552,7 +560,7 @@ static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
 {
     if (node == NULL)
         return;
-    if (node->type >= T_ScanState && node->type <= T_CustomScanState) {
+    if (node->type >= T_ScanState && node->type <= T_ForeignScanState) {
         TupleBuffer* tb = TupleBuffer::constructor();
 
         elog(DEBUG5, "----- ScanNode [%p] -----", node);
@@ -600,4 +608,4 @@ static inline void SetCurrentSessionThread(pthread_t thread)
     /* set current thread for later cancel */
     memcpy(static_cast<void*>(&PreviousThread), static_cast<void*>(&thread), sizeof(InitialThread));
 }
-END_C_SPACE
+//END_C_SPACE

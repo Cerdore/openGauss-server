@@ -1,14 +1,19 @@
 /*
  * @Author: your name
  * @Date: 2021-05-14 03:07:38
- * @LastEditTime: 2021-05-14 03:07:38
+ * @LastEditTime: 2021-05-25 06:37:58
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/GpuJoin/ResultBuffer.hpp
  */
 #ifndef RESULTBUFFER_HEAD_
 #define RESULTBUFFER_HEAD_
-
+struct Result {
+    int key1;
+    double dval1;
+    int key2;
+    double dval2;
+};
 class ResultBuffer {
 public:
     static constexpr std::size_t BUFSIZE = 1024UL * 1024UL * 128;
@@ -16,10 +21,11 @@ public:
 private:
     struct Result* buffer;
     int size;
-    int index;
+    
     std::atomic_long content_size;
 
 public:
+int index;
     ResultBuffer(void)
     {
         this->init();

@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-05-14 03:08:11
- * @LastEditTime: 2021-05-14 03:08:11
+ * @LastEditTime: 2021-05-25 07:22:18
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/GpuJoin/TupleBuffer.cpp
@@ -18,7 +18,17 @@ private:
     std::size_t content_size;
     std::size_t buffer_size;
 
+    /*cxs why not use the desc*/
+
+    // int* attrType;
+    // int* attrSize;
+    // int* attrTotalSize;
+    // int* attrIndex;
+    
+    // int totalAttr;
+
 public:
+long tupleNum;
     TupleBuffer(void)
     {
         this->init();
@@ -45,6 +55,9 @@ public:
         this->buffer = palloc(TupleBuffer::INITIAL_BUFSIZE);
         this->buffer_size = TupleBuffer::INITIAL_BUFSIZE;
         this->content_size = 0;
+
+        this->tupleNum = 0;
+        // this->totalAttr = 0;
     }
     void fini(void)
     {
@@ -70,8 +83,26 @@ public:
         while (this->checkOverflow(tuple_size))
             this->extendBuffer();
 
+        /*把数据全拷过去，没考虑解析*/
         std::memcpy(this->getWritePointer(), TupleBuffer::getTupleDataPointer(tts), tuple_size);
         this->content_size += tuple_size;
+
+        /* add attr, ref to gpu/tableScan.c
+        这是一个buffer,所以应该是对每个tuple一个这个属性？
+        并不需要，因为一个buffer中的tuple的属性是一样的
+        ，但是size都一样吗！！？
+        有了类型不就应该有size了吗...*/
+        // if (this->tupleNum = 0) {
+        //     //    this->totalAttr = get_relnatts(tts->tts_tuple->t_tableOid);
+        //     int natts = tts->tts_tupleDescriptor->natts;
+        //     this->totalAttr = natts;
+
+        //     this->attrSize = (int*)palloc(sizeof(int) * natts);
+        //     this->attrType = (int*)palloc(sizeof(int) * natts);
+        //     this->attrIndex = (int*)palloc(sizeof(int) * natts);
+        // }
+        // this->attrType[this->tupleNum] = this->tupleNum++;
+        this->tupleNum++;
     }
 
     void* getWritePointer(void) const
@@ -91,13 +122,14 @@ public:
 
     static std::size_t getTupleSize(TupleTableSlot* tts)
     {
-        return (tts->tts_tuple->t_len - tts->tts_tuple->t_data->t_hoff);
+//        return ((HeapTuple*)(tts->tts_tuple)->t_len - tts->tts_tuple->t_data->t_hoff);
+        return (static_cast<HeapTuple>(tts->tts_tuple)->t_len - static_cast<HeapTuple>(tts->tts_tuple)->t_data->t_hoff);
     }
 
     /*存疑*/
     static void* getTupleDataPointer(TupleTableSlot* tts)
     {
-        HeapTupleHeader ht = tts->tts_tuple->t_data;
+        HeapTupleHeader ht = static_cast<HeapTuple>(tts->tts_tuple)->t_data;
         return static_cast<void*>(reinterpret_cast<char*>(ht) + ht->t_hoff);
     }
 };

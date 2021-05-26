@@ -15,5 +15,5 @@ include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
 
-CXX = g++ -I ../../src/backend
-CXXFLAGS = -fPIC -std=c++11 -Wno-deprecated-register -Wno-deprecated-declarations -Wall
+CXX = g++ -L/usr/local/cuda/lib64 -lcutil -lcudpp -lcuda -lcudart -I/usr/local/cuda/include -I ../../src/gausskernel
+#CXXFLAGS = -fPIC -std=c++11 -Wno-deprecated-register -Wno-deprecated-declarations -Wall

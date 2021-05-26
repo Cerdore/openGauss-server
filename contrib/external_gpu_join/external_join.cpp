@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-05-14 03:06:57
- * @LastEditTime: 2021-05-14 13:29:27
+ * @LastEditTime: 2021-05-26 08:55:33
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/GpuJoin/external_join.cpp
@@ -18,8 +18,8 @@
  *
  *-------------------------------------------------------------------------
  */
-#define BEGIN_C_SPACE extern "C" {
-#define END_C_SPACE }
+// #define BEGIN_C_SPACE extern "C" {
+// #define END_C_SPACE }
 
 /* We cannot use new/delete because query cancelation may cause memory leak. */
 /* We cannot use std::thread because namespace problem with C linkage [-] */
@@ -28,8 +28,6 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
-
-BEGIN_C_SPACE
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -42,18 +40,19 @@ BEGIN_C_SPACE
 
 #include <limits.h>
 #include "executor/executor.h"
+#include "executor/tuptable.h"
 #include "utils/guc.h"
 
-#include "access/htup_details.h"
+#include "access/htup.h"
+
 #include "utils/memutils.h"
 #include "miscadmin.h"
 #include "catalog/pg_type.h"
 #include "nodes/print.h"
+//BEGIN_C_SPACE
 
-#include "TupleBuffer.hpp"
-#include "TupleBufferQueue.hpp"
-#include "ResultBuffer.hpp"
-#include "socket_lapper.hpp"
+
+#include "kernel.cuh"
 
 PG_MODULE_MAGIC;
 
@@ -99,7 +98,7 @@ struct ExternalJoinState {
     /* base offset when an attribute sticks out of buffer */
     // std::size_t pbase;
 
-    struct Tuple* d_tuple[2];  // poniter for gpu
+    struct Tuplekv* d_tuple[2];  // poniter for gpu
     struct Result* d_res;      // pointer for host
     struct Result* res;
 
@@ -195,7 +194,7 @@ static inline ExternalJoinState* makeExternalJoinState(void)
 static inline void FreeExternalJoinState(ExternalJoinState* ejs)
 {
     ejs->tbq.fini();
-    ejs->drb.fini();
+   // ejs->drb.fini();
     pfree(ejs);
 }
 
@@ -209,6 +208,80 @@ static inline ExternalJoinState* SetExternalJoinState(List** initPlan, ExternalJ
     *reinterpret_cast<ExternalJoinState**>(initPlan) = ejs;
     return ejs;
 }
+
+
+void moveTupletoGPU(void* arg)
+{
+    ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
+
+    /* if TupleBufferQueue is finalized, TupleBufferQueue->getLength() returns -1 */
+    int cnt = 0;
+    struct Tuplekv* d_tuple[2];
+    while (ejs->tbq.getLength() >= 0) {
+
+        TupleBuffer* tb = ejs->tbq.pop();
+
+        std::size_t size;
+
+        /* wait for scan completion */
+        // pthread_testcancel();
+        // if (tb == NULL) {
+        //     ::usleep(1);
+        //     continue;
+        // }
+        size = tb->getContentSize();
+
+        cuda::cudaError_t cudaStatus = cuda::cudaMalloc((void**)&d_tuple[cnt], tb->tupleNum * sizeof(Tuplekv));
+        if (cudaStatus != cuda::cudaSuccess) {
+            /*call error func*/
+        }
+
+        cudaStatus = cuda::cudaMemcpy(d_tuple[cnt], tb->getBufferPointer(), size, cuda::cudaMemcpyHostToDevice);
+        if (cudaStatus != cuda::cudaSuccess) {
+            /*call error func*/
+        }
+
+        ejs->d_tuple[cnt] = d_tuple[cnt];
+        ejs->T_size[cnt] = tb->tupleNum;
+        TupleBuffer::destructor(tb);
+
+        cnt++;
+    }
+//    return NULL;
+}
+
+void moveResulttoHost(void* arg)
+{
+    ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
+    cuda::cudaError_t cudaStatus =
+        cuda::cudaMemcpy(ejs->res, ejs->d_res, ejs->T_size[0] * ejs->T_size[1] * sizeof(Result), cuda::cudaMemcpyDeviceToHost);
+
+    if (cudaStatus != cuda::cudaSuccess) {
+        /*call error func*/
+    }
+    for (long i = 0; i < ejs->T_size[0] * ejs->T_size[1]; i++) {
+        if ((ejs->res + i)->key1 != -1) {
+            ejs->prb.put((ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res + i)->key2, (ejs->res + i)->dval2);
+        }
+    }
+    /*put result to host, then put it to queue*/
+}
+
+void nestLoopJoin(void* arg, struct Tuplekv* d_a, struct Tuplekv* d_b, long n_a, long n_b, struct Result* d_res)
+{
+    
+    ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
+    //    struct Result *res, *d_res;
+    ejs->res = (struct Result*)malloc(ejs->T_size[0] * ejs->T_size[1] * sizeof(Result));
+    cuda::cudaError_t cudaStatus = cuda::cudaMalloc((void**)&ejs->d_res, ejs->T_size[0] * ejs->T_size[1] * sizeof(Result));
+
+
+    nestLoopJoincu(d_a, d_b, n_a, n_b, d_res);
+
+    cudaStatus = cuda::cudaDeviceSynchronize();
+
+}
+
 
 /* main */
 TupleTableSlot* ExternalExecProcNode(PlanState* ps)
@@ -231,12 +304,11 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
             elog(DEBUG5, "BEGIN: Init");
             ejs = InitExternalJoin(ps);
 
-            moveResulttoHost(ejs);
             //            ejs->poffset = 0;
             // while ((ejs->psize = ejs->prb.getContentSize()) == 0)
             //     ::usleep(1);
 
-            nestLoopJoin(ejs->d_tuple[0], ejs->d_tuple[1], T_size[0], T_size[1], );
+            nestLoopJoin(ejs, ejs->d_tuple[0], ejs->d_tuple[1], ejs->T_size[0], ejs->T_size[1], ejs->d_res);
             moveResulttoHost(ejs);
             ejs->state = State::EXEC;
             elog(DEBUG5, "END: Init");
@@ -257,8 +329,9 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
             elog(DEBUG5, "END: Begin");
 
             /* join result receiving thread */
-            ::pthread_join(ejs->thread, NULL);
-            CancelPreviousSessionThread();
+            // ::pthread_join(ejs->thread, NULL);
+            // CancelPreviousSessionThread();
+
             EndExternalJoin(ps);
 
             elog(DEBUG5, "END: End");
@@ -275,6 +348,7 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
 
 static inline ExternalJoinState* InitExternalJoin(PlanState* ps)
 {
+    cuda::cudaError_t cudaStatus = cuda::cudaSetDevice(0);
     ExternalJoinState* ejs = SetExternalJoinState(&ps->initPlan, makeExternalJoinState());
 
     ScanTuple(ps, ejs);
@@ -325,7 +399,7 @@ static inline TupleTableSlot* ExecExternalJoin(PlanState* ps)
 
     if (ejs->prb.index <= 0)
         return NULL;
-    struct Result* res = prb.get();
+    struct Result* res = ejs->prb.get();
     void* tptr = static_cast<void*>(res);
     if (res == NULL)
         return NULL;
