@@ -6893,6 +6893,21 @@ static void InitConfigureNamesInt()
             NULL,
             NULL},
 #endif
+		/* The I/O upper limit of batch flush dirty page every second */
+        {{"gpc_clean_timeout",
+            PGC_SIGHUP,
+            CLIENT_CONN,
+            gettext_noop("Set the maximum allowed duration of any unused global plancache."),
+            NULL,
+            GUC_UNIT_S},
+            &u_sess->attr.attr_common.gpc_clean_timeout,
+            30 * 60,    /* 30min */
+            5 * 60,    /* 5min */
+            24 * 60 * 60,    /* 24h */
+            NULL,
+            NULL,
+            NULL},
+
         /* End-of-list marker */
         {{NULL, (GucContext)0, (config_group)0, NULL, NULL}, NULL, 0, 0, 0, NULL, NULL, NULL}};
 
@@ -7240,7 +7255,7 @@ static void InitConfigureNamesInt64()
              gettext_noop("Minimum age at which VACUUM should freeze a table row."),
              NULL},
             &u_sess->attr.attr_storage.vacuum_freeze_min_age,
-            INT64CONST(5000000000),
+            INT64CONST(2000000000),
             INT64CONST(0),
             INT64CONST(0x7FFFFFFFFFFFFFF),
             NULL,
@@ -7266,7 +7281,7 @@ static void InitConfigureNamesInt64()
              gettext_noop("Age at which VACUUM should scan whole table to freeze tuples."),
              NULL},
             &u_sess->attr.attr_storage.vacuum_freeze_table_age,
-            INT64CONST(15000000000),
+            INT64CONST(4000000000),
             INT64CONST(0),
             INT64CONST(0x7FFFFFFFFFFFFFF),
             NULL,
@@ -7294,7 +7309,7 @@ static void InitConfigureNamesInt64()
                 NULL},
             &g_instance.attr.attr_storage.autovacuum_freeze_max_age,
             /* see pg_resetxlog if you change the upper-limit value */
-            INT64CONST(20000000000),
+            INT64CONST(4000000000),
             INT64CONST(100000),
             INT64CONST(0x7FFFFFFFFFFFFFF),
             NULL,
@@ -9204,7 +9219,7 @@ static void ReportGUCOption(struct config_generic* record);
 static void reapply_stacked_values(struct config_generic* variable, struct config_string* pHolder, GucStack* stack,
     const char* curvalue, GucContext curscontext, GucSource cursource);
 static void ShowGUCConfigOption(const char* name, DestReceiver* dest);
-static void ShowAllGUCConfig(DestReceiver* dest);
+static void ShowAllGUCConfig(const char* likename, DestReceiver* dest);
 static char* _ShowOption(struct config_generic* record, bool use_units);
 static bool validate_option_array_item(const char* name, const char* value, bool skipIfNoPermissions);
 #ifndef ENABLE_MULTIPLE_NODES
@@ -9985,7 +10000,7 @@ static void InitializeGUCOptionsFromEnvironment(void)
      * the same.  If we can identify the platform stack depth rlimit, increase
      * default stack depth setting up to whatever is safe (but at most 2MB).
      */
-    stack_rlimit = DEFUALT_STACK_SIZE * 1024L;
+    stack_rlimit = get_stack_depth_rlimit();
 
     if (stack_rlimit > 0) {
         long new_limit = (stack_rlimit - STACK_DEPTH_SLOP) / 1024L;
@@ -14163,12 +14178,13 @@ void EmitWarningsOnPlaceholders(const char* className)
 /*
  * SHOW command
  */
-void GetPGVariable(const char* name, DestReceiver* dest)
+void GetPGVariable(const char* name, const char* likename, DestReceiver* dest)
 {
-    if (guc_name_compare(name, "all") == 0)
-        ShowAllGUCConfig(dest);
-    else
+    if (guc_name_compare(name, "all") == 0) {
+        ShowAllGUCConfig(likename, dest);
+    } else {
         ShowGUCConfigOption(name, dest);
+    }
 }
 
 TupleDesc GetPGVariableResultDesc(const char* name)
@@ -14224,7 +14240,7 @@ static void ShowGUCConfigOption(const char* name, DestReceiver* dest)
 /*
  * SHOW ALL command
  */
-static void ShowAllGUCConfig(DestReceiver* dest)
+static void ShowAllGUCConfig(const char* likename, DestReceiver* dest)
 {
     bool am_superuser = superuser();
     int i;
@@ -14248,6 +14264,10 @@ static void ShowAllGUCConfig(DestReceiver* dest)
 
         if ((conf->flags & GUC_NO_SHOW_ALL) || ((conf->flags & GUC_SUPERUSER_ONLY) && !am_superuser))
             continue;
+
+        if(NULL != likename && NULL == strstr((char*)conf->name, likename)) {
+            continue;
+        }
 
         /* assign to the values array */
         values[0] = PointerGetDatum(cstring_to_text(conf->name));
@@ -19732,7 +19752,8 @@ static void assign_instr_unique_sql_count(int newval, void* extra)
 #define RESET_UNIQUE_SQL_FUNC 5716
 
     /* only let WLMProcessThread do the cleanup */
-    if (AmWLMWorkerProcess() && IS_PGXC_COORDINATOR && u_sess->attr.attr_common.instr_unique_sql_count > newval) {
+    if (AmWLMWorkerProcess() && (IS_PGXC_COORDINATOR || IS_SINGLE_NODE) &&
+        u_sess->attr.attr_common.instr_unique_sql_count > newval) {
         bool result = DatumGetBool(OidFunctionCall3(RESET_UNIQUE_SQL_FUNC,
             CStringGetTextDatum("GLOBAL"),
             CStringGetTextDatum("BY_GUC"),

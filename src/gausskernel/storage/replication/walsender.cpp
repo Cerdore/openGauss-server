@@ -117,6 +117,11 @@ long g_logical_slot_sleep_time = 0;
 #define AmWalSenderToDummyStandby() (t_thrd.walsender_cxt.MyWalSnd->sendRole == SNDROLE_PRIMARY_DUMMYSTANDBY)
 #define AmWalSenderOnDummyStandby() (t_thrd.walsender_cxt.MyWalSnd->sendRole == SNDROLE_DUMMYSTANDBY_STANDBY)
 
+/*
+ * calculate catchup late every 1000ms
+ */
+#define CALCULATE_CATCHUP_RATE_TIME 1000
+
 /* Statistics for log control */
 static const int MICROSECONDS_PER_SECONDS = 1000000;
 static const int MILLISECONDS_PER_SECONDS = 1000;
@@ -208,6 +213,7 @@ static void WalSndRefreshPercentCountStartLsn(XLogRecPtr currentMaxLsn, XLogRecP
 static void set_xlog_location(ServerMode local_role, XLogRecPtr* sndWrite, XLogRecPtr* sndFlush, XLogRecPtr* sndReplay);
 static void ProcessArchiveFeedbackMessage(void);
 static void WalSndArchiveXlog(XLogRecPtr targetLsn, int sub_term);
+static void CalCatchupRate();
 
 char *DataDir = ".";
 
@@ -1420,11 +1426,11 @@ static void AdvanceLogicalReplication(AdvanceReplicationCmd *cmd)
      * possition accordingly.
      */
     flushRecPtr = GetFlushRecPtr();
-    if (XLByteLT(flushRecPtr, cmd->restartpoint)) {
-        cmd->restartpoint = flushRecPtr;
+    if (XLByteLT(flushRecPtr, cmd->confirmed_flush)) {
+        cmd->confirmed_flush = flushRecPtr;
     }
 
-    if (XLogRecPtrIsInvalid(cmd->restartpoint)) {
+    if (XLogRecPtrIsInvalid(cmd->confirmed_flush)) {
         ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                         errmsg("invalid target wal lsn while advancing "
                                "logical replication restart lsn.")));
@@ -1441,26 +1447,36 @@ static void AdvanceLogicalReplication(AdvanceReplicationCmd *cmd)
      * not available anymore.
      */
     minLsn = t_thrd.slot_cxt.MyReplicationSlot->data.confirmed_flush;
-    if (XLByteLT(cmd->restartpoint, minLsn)) {
+    if (XLByteLT(cmd->confirmed_flush, minLsn)) {
         ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
                         errmsg("cannot move slot to %X/%X, minimum is %X/%X",
-                               (uint32)(cmd->restartpoint >> 32), (uint32)cmd->restartpoint,
+                               (uint32)(cmd->confirmed_flush >> 32), (uint32)cmd->confirmed_flush,
                                (uint32)(minLsn >> 32), (uint32)(minLsn))));
     }
 
-    LogicalConfirmReceivedLocation(cmd->restartpoint);
+    LogicalConfirmReceivedLocation(cmd->confirmed_flush);
+
+    /* Advance the restart_lsn in primary. */
+    volatile ReplicationSlot *slot = t_thrd.slot_cxt.MyReplicationSlot;
+    SpinLockAcquire(&slot->mutex);
+    slot->data.restart_lsn = cmd->restart_lsn;
+    SpinLockRelease(&slot->mutex);
+
     ReplicationSlotMarkDirty();
     log_slot_advance(&t_thrd.slot_cxt.MyReplicationSlot->data);
 
     if (log_min_messages <= DEBUG2) {
-        ereport(LOG, (errmsg("AdvanceLogicalReplication, slotname = %s, endpoint = %X/%X.",
+        ereport(LOG, (errmsg("AdvanceLogicalReplication, slotname = %s, restart_lsn = %X/%X, "
+                             "confirmed_flush = %X/%X.",
                              cmd->slotname,
-                             (uint32)(cmd->restartpoint >> 32),
-                             (uint32)cmd->restartpoint)));
+                             (uint32)(cmd->restart_lsn >> 32),
+                             (uint32)cmd->restart_lsn,
+                             (uint32)(cmd->confirmed_flush >> 32),
+                             (uint32)cmd->confirmed_flush)));
     }
 
     rc = snprintf_s(xpos, sizeof(xpos), sizeof(xpos) - 1,
-                    "%X/%X", (uint32)(cmd->restartpoint >> 32), (uint32)cmd->restartpoint);
+                    "%X/%X", (uint32)(cmd->confirmed_flush >> 32), (uint32)cmd->confirmed_flush);
     securec_check_ss(rc, "\0", "\0");
 
     pq_beginmessage(&buf, 'T');
@@ -2243,7 +2259,7 @@ static void AdvanceReplicationSlot(XLogRecPtr flush)
             LogicalConfirmReceivedLocation(flush);
             if (RecoveryInProgress() && OidIsValid(t_thrd.slot_cxt.MyReplicationSlot->data.database)) {
                 /* Notify the primary to advance logical slot location */
-                NotifyPrimaryAdvance(flush);
+                NotifyPrimaryAdvance(t_thrd.slot_cxt.MyReplicationSlot->data.restart_lsn, flush);
             }
         } else {
             PhysicalConfirmReceivedLocation(flush);
@@ -3325,13 +3341,8 @@ static int WalSndLoop(WalSndSendDataCallback send_data)
                 }
             }
         } else {
-            if (t_thrd.walsender_cxt.MyWalSnd->state == WALSNDSTATE_STREAMING &&
-                !XLByteLT(t_thrd.walsender_cxt.catchup_threshold,
-                          INT2UINT64(g_instance.attr.attr_storage.MaxSendSize) * 1024)) {
-                ereport(DEBUG1, (errmsg("standby \"%s\" has now caught up with primary",
-                                        u_sess->attr.attr_common.application_name)));
-                WalSndSetState(WALSNDSTATE_CATCHUP);
-                t_thrd.walsender_cxt.catchup_threshold = 0;
+            if (t_thrd.walsender_cxt.MyWalSnd->state == WALSNDSTATE_CATCHUP) {
+                CalCatchupRate();
             }
         }
 
@@ -3618,6 +3629,9 @@ static void InitWalSnd(void)
             walsnd->log_ctrl.pre_rate2 = 0;
             walsnd->log_ctrl.prev_RPO = -1;
             walsnd->log_ctrl.current_RPO = -1;
+            walsnd->lastCalTime = 0;
+            walsnd->lastCalWrite = InvalidXLogRecPtr;
+            walsnd->catchupRate = 0;
             walsnd->log_ctrl.just_keep_alive = false;
             SpinLockRelease(&walsnd->mutex);
             /* don't need the lock anymore */
@@ -5467,4 +5481,35 @@ static void WalSndRefreshPercentCountStartLsn(XLogRecPtr currentMaxLsn, XLogRecP
 XLogSegNo WalGetSyncCountWindow(void)
 {
     return (XLogSegNo)(uint32)u_sess->attr.attr_storage.wal_keep_segments;
+}
+
+/*
+ * Calculate catchup rate of standby to estimate how long
+ * the standby will be caught up with primary.
+ */
+static void CalCatchupRate() {
+    if (g_instance.attr.attr_storage.catchup2normal_wait_time < 0) {
+        return;
+    }
+    volatile WalSnd *walsnd = t_thrd.walsender_cxt.MyWalSnd;
+
+    SpinLockAcquire(&walsnd->mutex);
+    XLogRecPtr write = walsnd->write;
+    TimestampTz now = GetCurrentTimestamp();
+
+    if (XLByteEQ(walsnd->lastCalWrite, InvalidXLogRecPtr)) {
+        walsnd->lastCalWrite = write;
+        walsnd->lastCalTime = now;
+        SpinLockRelease(&walsnd->mutex);
+        return;
+    }
+    if (TimestampDifferenceExceeds(walsnd->lastCalTime, now, CALCULATE_CATCHUP_RATE_TIME) &&
+        XLByteLT(walsnd->lastCalWrite, write)) {
+        double tempRate = (double)(now - walsnd->lastCalTime) /
+                          (double)XLByteDifference(write, walsnd->lastCalWrite);
+        walsnd->catchupRate = walsnd->catchupRate == 0 ? tempRate : (walsnd->catchupRate + tempRate) / 2;
+        walsnd->lastCalWrite = write;
+        walsnd->lastCalTime = now;
+    }
+    SpinLockRelease(&walsnd->mutex);
 }

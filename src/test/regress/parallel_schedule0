@@ -760,3 +760,5 @@ test: leaky_function_operator
 #test: gs_guc
 
 test: smp
+test: sequence_cache_test
+test: procedure_privilege_test
