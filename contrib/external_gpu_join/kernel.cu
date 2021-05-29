@@ -1,6 +1,8 @@
 #include "kernel.cuh"
 #include "stdio.h"
 #include "assert.h"
+#include "cuda.h"
+#include "cuda_runtime.h"
 
 cudaDeviceProp GPUprop;
 /*
@@ -39,6 +41,22 @@ cudaDeviceProp GPUprop;
 //     return k & (kHashTableCapacity - 1);
 // }
 
+
+// bool tupleKvcudaMallocu(Tuplekv * p, size_t t){
+//     cudaError_t cudaStatus = cudaMalloc((void**)&p, t);
+//     if (cudaStatus != cudaSuccess) {
+//         /*call error func*/
+//         return true;
+//     }
+//     return false;
+// }
+// bool cudaMemcpytoDevice(){
+
+// }
+// bool cudaMemcpytoHost(){
+
+// }
+
 __global__ void nLJ(struct Tuplekv* d_a, struct Tuplekv* d_b, long n_a, long n_b, struct Result* res)
 {
     // int x = threadIdx.x + blockIdx.x * blockDim.x;
@@ -52,20 +70,20 @@ __global__ void nLJ(struct Tuplekv* d_a, struct Tuplekv* d_b, long n_a, long n_b
     //     } else
     //         res = NULL;
     // }
-    int x = threadIdx.x + blockIdx.x * blockDim.x;
+    long x = threadIdx.x + blockIdx.x * blockDim.x;
     if (x >= n_b)
         return;
-    for (int i = 0; i < n_a; i++) {
+    for (long i = 0; i < n_a; i++) {
         if (d_b[x].key == d_a[i].key) {
-            (res + i * x)->key1 = d_a[i].key;
-            (res + i * x)->dval1 = d_a[i].dval;
-            (res + i * x)->key2 = d_b[x].key;
-            (res + i * x)->dval2 = d_b[x].dval;
+            (res + i + n_a * x)->key1 = d_a[i].key;
+            (res + i + n_a * x)->dval1 = d_a[i].dval;
+            (res + i + n_a * x)->key2 = d_b[x].key;
+            (res + i + n_a * x)->dval2 = d_b[x].dval;
         } else {
-            (res + i * x)->key1 = -1;
-            (res + i * x)->dval1 = -1;
-            (res + i * x)->key2 = -1;
-            (res + i * x)->dval2 = -1;
+            (res + i + n_a * x)->key1 = -1;
+            (res + i + n_a * x)->dval1 = -1;
+            (res + i + n_a * x)->key2 = -1;
+            (res + i + n_a * x)->dval2 = -1;
         }
     }
 }

@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-05-14 03:06:57
- * @LastEditTime: 2021-05-26 08:55:33
+ * @LastEditTime: 2021-05-29 13:44:03
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/GpuJoin/external_join.cpp
@@ -51,16 +51,25 @@
 #include "nodes/print.h"
 //BEGIN_C_SPACE
 
+#include "TupleResult.hpp"
+#include "TupleBuffer.hpp"
+#include "TupleBufferQueue.hpp"
+#include "ResultBuffer.hpp"
 
 #include "kernel.cuh"
 
+namespace {
+    #include "cuda.h"
+    #include "cuda_runtime.h"
+}
 PG_MODULE_MAGIC;
 
 void _PG_init(void);
 void _PG_fini(void);
 
 /* Saved hook values in case of unload */
-static ExecProcNode_hook_type prev_ExecProcNode = NULL;
+
+static THR_LOCAL ExecProcNode_hook_type prev_ExecProcNode = NULL;
 
 /* GUC variables */
 /* Flag to use external join module */
@@ -99,10 +108,11 @@ struct ExternalJoinState {
     // std::size_t pbase;
 
     struct Tuplekv* d_tuple[2];  // poniter for gpu
+    
     struct Result* d_res;      // pointer for host
     struct Result* res;
 
-    int T_size[2];  // size of tuple length
+    long T_size[2];  // size of tuple length
 
     /* size of content in result buffer */
     long psize;
@@ -143,16 +153,17 @@ void _PG_init(void)
         "Selects whether external join is enabled.",
         NULL,
         &EnableExternalJoin,
-        false,
+        true,
         PGC_USERSET,
         0,
         NULL,
         NULL,
         NULL);
 
-    EmitWarningsOnPlaceholders("external_join");
+    EmitWarningsOnPlaceholders("external_gpu_join");
 
-    elog(DEBUG1, "----- external join module loaded -----");
+    //elog(DEBUG1, "----- external gpu join module loaded -----");
+    ereport(LOG,(errmsg("---- external gpu join module loaded")));
     /* Install hooks. */
     prev_ExecProcNode = ExecProcNode_hook;
     ExecProcNode_hook = ExternalExecProcNode;
@@ -163,7 +174,8 @@ void _PG_init(void)
  */
 void _PG_fini(void)
 {
-    elog(DEBUG1, "-----external join module unloaded-----");
+    ereport(LOG,(errmsg("-----external gpu join module unloaded-----")));
+    
     /* Uninstall hooks. */
     ExecProcNode_hook = prev_ExecProcNode;
 }
@@ -209,20 +221,24 @@ static inline ExternalJoinState* SetExternalJoinState(List** initPlan, ExternalJ
     return ejs;
 }
 
-
+/*
+这里的大小并没有问题
+*/
 void moveTupletoGPU(void* arg)
 {
+    ereport(LOG,(errmsg("------------------BEGIN: moveTupletoGPU")));
     ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
 
     /* if TupleBufferQueue is finalized, TupleBufferQueue->getLength() returns -1 */
     int cnt = 0;
     struct Tuplekv* d_tuple[2];
-    while (ejs->tbq.getLength() >= 0) {
+        ereport(LOG,(errmsg("tbq.getlength():  %d\n",ejs->tbq.getLength())));
+
+    while (ejs->tbq.getLength() > 0) {
 
         TupleBuffer* tb = ejs->tbq.pop();
 
         std::size_t size;
-
         /* wait for scan completion */
         // pthread_testcancel();
         // if (tb == NULL) {
@@ -230,55 +246,98 @@ void moveTupletoGPU(void* arg)
         //     continue;
         // }
         size = tb->getContentSize();
+        
+ ereport(LOG,(errmsg("tuple num is %ld\n size is %lu\n", tb->tupleNum, size)));
+ ereport(LOG,(errmsg("Sizeof Tuplekv is %d\n", sizeof(Tuplekv))));
+        //d_tuple[cnt] = myCudaMalloc< Tuplekv >( tb->tupleNum * sizeof(Tuplekv) );
 
-        cuda::cudaError_t cudaStatus = cuda::cudaMalloc((void**)&d_tuple[cnt], tb->tupleNum * sizeof(Tuplekv));
-        if (cudaStatus != cuda::cudaSuccess) {
-            /*call error func*/
-        }
+        cudaError_t cudaStatus = cudaMalloc((void**)&d_tuple[cnt], tb->tupleNum * sizeof(Tuplekv));
+        // if (!cudaStatus) {
+        //     /*call error func*/
+        // }
 
-        cudaStatus = cuda::cudaMemcpy(d_tuple[cnt], tb->getBufferPointer(), size, cuda::cudaMemcpyHostToDevice);
-        if (cudaStatus != cuda::cudaSuccess) {
-            /*call error func*/
-        }
+        
+        cudaStatus = cudaMemcpy(d_tuple[cnt], tb->getBufferPointer(), size, cudaMemcpyHostToDevice);
+        
+        // if (cudaStatus != cudaSuccess) {
+        //     /*call error func*/
+        // }
 
         ejs->d_tuple[cnt] = d_tuple[cnt];
+
+        
+        
+        /**
+         * this code for testing the data copy is right. 
+        Tuplekv * d_test_tuple = static_cast<Tuplekv*> (palloc(16000));
+        cudaStatus = cudaMemcpy(d_test_tuple, d_tuple[cnt], size, cudaMemcpyDeviceToHost);
+
+        ereport(LOG,(errmsg("The tuple key:  %d   value: %f\n", d_test_tuple->key, d_test_tuple->dval)));
+
+        */
+
         ejs->T_size[cnt] = tb->tupleNum;
         TupleBuffer::destructor(tb);
 
         cnt++;
     }
+    ereport(LOG,(errmsg("------------------End: moveTupletoGPU")));
 //    return NULL;
 }
 
 void moveResulttoHost(void* arg)
 {
     ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
-    cuda::cudaError_t cudaStatus =
-        cuda::cudaMemcpy(ejs->res, ejs->d_res, ejs->T_size[0] * ejs->T_size[1] * sizeof(Result), cuda::cudaMemcpyDeviceToHost);
+    cudaError_t cudaStatus =
+    cudaMemcpy(ejs->res, ejs->d_res, ejs->T_size[0] * ejs->T_size[1] * sizeof(Result), cudaMemcpyDeviceToHost);
+    //cudaMemcpyToHost(ejs->res, ejs->d_res, ejs->T_size[0] * ejs->T_size[1] * sizeof(Result), cudaMemcpyDeviceToHost);
 
-    if (cudaStatus != cuda::cudaSuccess) {
-        /*call error func*/
-    }
+    // if (cudaStatus != cudaSuccess) {
+    //     /*call error func*/
+    // }
+    long sum = 0;
     for (long i = 0; i < ejs->T_size[0] * ejs->T_size[1]; i++) {
+        
+        if((ejs->res + i)->key1 == 0 && ((ejs->res + i)->key2 ==0)) continue;
+        
         if ((ejs->res + i)->key1 != -1) {
-            ejs->prb.put((ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res + i)->key2, (ejs->res + i)->dval2);
+          
+            //ereport(LOG,(errmsg("Result is   %d %f %d %f\n",(ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res + i)->key2, (ejs->res + i)->dval2 )));
+           sum++;
+            int k1 = (ejs->res + i)->key1;
+            double d1 = (ejs->res + i)->dval1;
+            int k2 = (ejs->res + i)->key2;
+            double d2 = (ejs->res + i)->dval2;
+            //ejs->prb.put((ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res + i)->key2, (ejs->res + i)->dval2);
+            ejs->prb.put(k1, d1, k2, d2);
         }
     }
+    ereport(LOG,(errmsg("count(Result) is   %d\n",sum)));
+
     /*put result to host, then put it to queue*/
 }
 
-void nestLoopJoin(void* arg, struct Tuplekv* d_a, struct Tuplekv* d_b, long n_a, long n_b, struct Result* d_res)
+void nestLoopJoin(void* arg)
 {
-    
+    ereport(LOG,(errmsg("------------------Begin: nestLoopJoin")));
+
     ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
-    //    struct Result *res, *d_res;
-    ejs->res = (struct Result*)malloc(ejs->T_size[0] * ejs->T_size[1] * sizeof(Result));
-    cuda::cudaError_t cudaStatus = cuda::cudaMalloc((void**)&ejs->d_res, ejs->T_size[0] * ejs->T_size[1] * sizeof(Result));
+    
+    long allResNumSize = ejs->T_size[0] * ejs->T_size[1] * sizeof(Result);
+    ereport(LOG,(errmsg("allResNumSize is %ld\n", allResNumSize)));
+    
+    
+    ejs->res = (struct Result*)palloc(ejs->T_size[0] * ejs->T_size[1] * sizeof(Result));
+    cudaError_t cudaStatus = cudaMalloc((void**)&ejs->d_res,ejs->T_size[0] * ejs->T_size[1] * sizeof(Result) );
+    
+   // ejs->d_res = myCudaMalloc<Result>( ejs->T_size[0] * ejs->T_size[1] * sizeof(Result) );
 
 
-    nestLoopJoincu(d_a, d_b, n_a, n_b, d_res);
+    nestLoopJoincu(ejs->d_tuple[0], ejs->d_tuple[1], ejs->T_size[0], ejs->T_size[1], ejs->d_res);
 
-    cudaStatus = cuda::cudaDeviceSynchronize();
+    // cudaStatus = 
+    // cudaDeviceSynchronize();
+    ereport(LOG,(errmsg("------------------End: nestLoopJoin")));
 
 }
 
@@ -288,8 +347,8 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
 {
     TupleTableSlot* tts = NULL;
     ExternalJoinState* ejs = GetExternalJoinState(ps->initPlan);
-
-    elog(DEBUG5, "*****ExternalExecProcNode()*****");
+    //ereport(LOG,(errmsg("*****ExternalExecProcNode()*****")));
+    
     if (EnableExternalJoin == false)
         return ExecProcNode(ps);
 
@@ -302,20 +361,21 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
     for (;;) {
         if (ejs == NULL) {
             elog(DEBUG5, "BEGIN: Init");
+            ereport(LOG,(errmsg("------------------BEGIN: Init Loop")));
             ejs = InitExternalJoin(ps);
 
             //            ejs->poffset = 0;
             // while ((ejs->psize = ejs->prb.getContentSize()) == 0)
             //     ::usleep(1);
 
-            nestLoopJoin(ejs, ejs->d_tuple[0], ejs->d_tuple[1], ejs->T_size[0], ejs->T_size[1], ejs->d_res);
+            nestLoopJoin(ejs);
             moveResulttoHost(ejs);
             ejs->state = State::EXEC;
+            ereport(LOG,(errmsg("------------------End: Init Loop")));
             elog(DEBUG5, "END: Init");
         } else if (ejs->state == State::EXEC) {
-
+            //ereport(LOG,(errmsg("------------------BEGIN: Exec")));
             /*开始执行之后，第一次返回一个tuple，然后break，返回单个tuple；下次再调用ExternalExecProcNode还是进入EXEC*/
-            elog(DEBUG5, "BEGIN: Exec");
 
             tts = ExecExternalJoin(ps);
             if (tts == NULL) {
@@ -323,18 +383,19 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
                 continue;
             }
 
-            elog(DEBUG5, "END: Exec");
+            //ereport(LOG,(errmsg("------------------End: Exec")));            
             break;
         } else if (ejs->state == State::FINI) {
             elog(DEBUG5, "END: Begin");
+            ereport(LOG,(errmsg("------------------END: Begin")));
 
             /* join result receiving thread */
             // ::pthread_join(ejs->thread, NULL);
             // CancelPreviousSessionThread();
 
             EndExternalJoin(ps);
-
-            elog(DEBUG5, "END: End");
+            EnableExternalJoin = false; //cxs module time out
+            ereport(LOG,(errmsg("------------------END: End")));
             break;
         } else {
             ereport(
@@ -348,16 +409,17 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
 
 static inline ExternalJoinState* InitExternalJoin(PlanState* ps)
 {
-    cuda::cudaError_t cudaStatus = cuda::cudaSetDevice(0);
+     ereport(LOG,(errmsg("------------------BEGIN: IniInitExternalJoin")));
+    cudaError_t cudaStatus = cudaSetDevice(0);
     ExternalJoinState* ejs = SetExternalJoinState(&ps->initPlan, makeExternalJoinState());
 
     ScanTuple(ps, ejs);
-
+    
     moveTupletoGPU(ejs);
-
-    while (ejs->tbq.getLength() > 0)
-        ::usleep(1);
-    ejs->tbq.fini();
+    
+    // while (ejs->tbq.getLength() > 0)
+    //     ::usleep(1);
+    // ejs->tbq.fini();
 
     ExecAssignExprContext(ps->state, ps);
     /* init result tuple */
@@ -366,8 +428,8 @@ static inline ExternalJoinState* InitExternalJoin(PlanState* ps)
     ExecAssignProjectionInfo(ps, NULL);
     ps->ps_TupFromTlist = false;
 
-    // ::pthread_join(ejs->thread, NULL);
-    // CancelPreviousSessionThread();
+    
+    ereport(LOG,(errmsg("------------------END: IniInitExternalJoin")));
 
     return ejs;
 }
@@ -375,11 +437,14 @@ static inline ExternalJoinState* InitExternalJoin(PlanState* ps)
 static inline void EndExternalJoin(PlanState* ps)
 {
     ExternalJoinState* ejs = GetExternalJoinState(ps->initPlan);
-
+    ejs->tbq.fini();
     ExecFreeExprContext(ps);
     ExecClearTuple(ps->ps_ResultTupleSlot);
-    //    ::close(ejs->sock);
+
     FreeExternalJoinState(ejs);
+    cudaFree(ejs->d_tuple[0]);
+    cudaFree(ejs->d_tuple[1]);
+    cudaFree(ejs->d_res);
 }
 
 /* prev 应该保存的是上次最后的位置
@@ -400,6 +465,10 @@ static inline TupleTableSlot* ExecExternalJoin(PlanState* ps)
     if (ejs->prb.index <= 0)
         return NULL;
     struct Result* res = ejs->prb.get();
+
+    // ereport(LOG,(errmsg("ExecExternalJoin Result is   %d %f %d %f\n",res->key1, res->dval1, res->key2, res->dval2 )));
+           
+
     void* tptr = static_cast<void*>(res);
     if (res == NULL)
         return NULL;
@@ -412,9 +481,16 @@ static inline TupleTableSlot* ExecExternalJoin(PlanState* ps)
 
     // void* re = static_cast<void*> res;
     std::size_t off = 0;
+    bool ok = 0;
     for (int col = 0; col < td->natts; col++) {
         void* ptr;
+       
+    //         ereport(LOG,(errmsg
+    //  ("Type of Col:  %d \n",td->attrs[col]->atttypid )));
+         
+         
         switch (td->attrs[col]->atttypid) {
+            case INT4OID:   //cxs add
             case INT8OID:
             case FLOAT8OID:
                 // ejs->poffset = GetAlignedOffset(ejs->poffset, sizeof(double));
@@ -422,7 +498,7 @@ static inline TupleTableSlot* ExecExternalJoin(PlanState* ps)
                 off += sizeof(double);
                 //                ejs->poffset += sizeof(double);
                 break;
-            case INT4OID:
+//cxs            case INT4OID:
             case FLOAT4OID:
             case OIDOID:
                 ptr = static_cast<void*>(static_cast<char*>(tptr) + off);
@@ -486,6 +562,9 @@ static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
         elog_node_display(DEBUG5, "ScanNode->plan", node->plan, true);
 
         /* scan tuple */
+        
+        ereport(LOG,(errmsg("enter into putTuple")));
+
         for (TupleTableSlot* tts = ExecProcNode(node); tts->tts_isempty == false; tts = ExecProcNode(node)) {
             /* copy tuple to buffer */
             tb->putTuple(tts);

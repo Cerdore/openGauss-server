@@ -59,8 +59,8 @@ endif
 ifdef PGXS
 # We assume that we are in src/makefiles/, so top is ...
 top_builddir := $(dir $(PGXS))../..
-$(info    top_builddir VAR is $(top_builddir))
-$(info    PGXS VAR is $(PGXS))
+# $(info    top_builddir VAR is $(top_builddir))
+# $(info    PGXS VAR is $(PGXS))
 include $(top_builddir)/src/Makefile.global
 
 top_srcdir = $(top_builddir)
@@ -107,13 +107,13 @@ all: $(PROGRAM) $(DATA_built) $(SCRIPTS_built) $(addsuffix $(DLSUFFIX), $(MODULE
 ifdef MODULE_big
 # shared library parameters
 
-$(info    MODULE_big is $(MODULE_big))
+# $(info    MODULE_big is $(MODULE_big))
 NAME = $(MODULE_big)
 
 include $(top_srcdir)/src/Makefile.shlib
 
 all: all-lib
-$(info    line116: step into all: all-lib $(all-lib))
+# $(info    line116: step into all: all-lib $(all-lib))
 endif # MODULE_big
 
 
@@ -147,8 +147,8 @@ endif # SCRIPTS_built
 
 ifdef MODULE_big
 install: install-lib
-$(info    line150: step into install-lib)
-$(info    line27: install-lib is $(install-lib))
+# $(info    line150: step into install-lib)
+# $(info    line27: install-lib is $(install-lib))
 endif # MODULE_big
 
 

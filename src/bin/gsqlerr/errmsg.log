@@ -1,4 +1,4 @@
---start time: 2021-04-29 11:41:59  
+--start time: 2021-05-27 08:44:12  
 FUNC:[readErrmsgFile] LINE[1422]: process readErrmsgFile success.
 Scan and process file:/home/xsdb/openGauss/openGauss-server/src/common/backend/parser/hint_scan.l success.
 Scan and process file:/home/xsdb/openGauss/openGauss-server/src/common/backend/parser/scan.l success.
@@ -1294,8 +1294,8 @@ file /home/xsdb/openGauss/openGauss-server/src/bin/gsqlerr/errmsg.h exist.
 file /home/xsdb/openGauss/openGauss-server/src/bin/gsqlerr/gsqlerr_errmsg.h exist.
 
 ===========================================================================================================================
- 22 errmsg insert, 25 errmsg delete, 917 errmsg incomplete. 
- 7302 errmsg before make check, 7299 errmsg after make check. 
+ 22 errmsg insert, 29 errmsg delete, 917 errmsg incomplete. 
+ 7302 errmsg before make check, 7295 errmsg after make check. 
 ===========================================================================================================================
 
 The change of the error message in current version can be view in the file "/home/xsdb/openGauss/openGauss-server/src/bin/gsqlerr/errmsg_result.txt". 

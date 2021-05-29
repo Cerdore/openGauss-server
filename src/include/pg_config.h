@@ -709,7 +709,7 @@
 #define PG_VERSION "9.2.4"
 
 /* Gaussdb version as a string*/
-#define DEF_GS_VERSION "(GaussDB Kernel V500R001C20 build cb00dc35) compiled at 2021-04-29 11:33:31 commit 0 last mr  debug"
+#define DEF_GS_VERSION "(GaussDB Kernel V500R001C20 build 1a83dfa6) compiled at 2021-05-27 08:37:40 commit 0 last mr  debug"
 
 /* PostgreSQL version as a number */
 #define PG_VERSION_NUM 90204
@@ -724,7 +724,7 @@
 #define PGXC_VERSION_NUM 
 
 /* A string containing the version number, platform, and C compiler */
-#define PG_VERSION_STR "PostgreSQL 9.2.4 (GaussDB Kernel V500R001C20 build cb00dc35) compiled at 2021-04-29 11:33:31 commit 0 last mr  debug on x86_64-unknown-linux-gnu, compiled by g++ (GCC) 7.3.0, 64-bit"
+#define PG_VERSION_STR "PostgreSQL 9.2.4 (GaussDB Kernel V500R001C20 build 1a83dfa6) compiled at 2021-05-27 08:37:40 commit 0 last mr  debug on x86_64-unknown-linux-gnu, compiled by g++ (GCC) 7.3.0, 64-bit"
 
 /* A string containing the version number of Postgres-XC, platform, and C compiler */
 #define PGXC_VERSION_STR "Postgres-XC 1.1 on x86_64-unknown-linux-gnu, based on PostgreSQL 9.2.4, compiled by g++ (GCC) 7.3.0, 64-bit"

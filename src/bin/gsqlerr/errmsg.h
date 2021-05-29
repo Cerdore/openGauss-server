@@ -10,7 +10,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {2, "42883",
-	  { {"parse_oper.cpp", 194}, {"planner.cpp", 5061}, },
+	  { {"parse_oper.cpp", 194}, {"planner.cpp", 5062}, },
 },
 
 	  {3, "42883",
@@ -1758,7 +1758,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {427, "42P08",
-	  { {"parse_param.cpp", 333}, {"prepare.cpp", 141}, {"postgres.cpp", 3364}, 
+	  { {"parse_param.cpp", 333}, {"prepare.cpp", 141}, {"postgres.cpp", 3366}, 
 	 },
 },
 
@@ -1805,11 +1805,11 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {438, "42601",
-	  { {"postmaster.cpp", 1312}, {"postgres.cpp", 6557}, },
+	  { {"postmaster.cpp", 1312}, {"postgres.cpp", 6559}, },
 },
 
 	  {439, "42601",
-	  { {"postmaster.cpp", 1315}, {"postgres.cpp", 6560}, },
+	  { {"postmaster.cpp", 1315}, {"postgres.cpp", 6562}, },
 },
 
 	  {440, "22023",
@@ -1834,7 +1834,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {447, "XX000",
-	  { {"bootstrap.cpp", 219}, {"postmaster.cpp", 2155}, {"postgres.cpp", 6889}, 
+	  { {"bootstrap.cpp", 219}, {"postmaster.cpp", 2155}, {"postgres.cpp", 6891}, 
 	 },
 },
 
@@ -2407,7 +2407,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 	  {591, "42704",
 	  { {"acl.cpp", 5730}, {"user.cpp", 2024}, {"user.cpp", 2982}, 
 	 {"user.cpp", 3085}, {"user.cpp", 3323}, {"user.cpp", 5802}, 
-	 {"postgres.cpp", 7973}, },
+	 {"postgres.cpp", 7975}, },
 },
 
 	  {593, "42501",
@@ -2670,7 +2670,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {667, "42P16",
-	  { {"tablecmds.cpp", 1707}, {"rewriteHandler.cpp", 2882}, },
+	  { {"tablecmds.cpp", 1707}, {"rewriteHandler.cpp", 2885}, },
 },
 
 	  {668, "42809",
@@ -2693,7 +2693,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 
 	  {674, "42704",
 	  { {"heap.cpp", 2263}, {"heap.cpp", 2272}, {"execRemote.cpp", 6145}, 
-	 {"tablecmds.cpp", 2405}, {"postgres.cpp", 10799}, {"utility.cpp", 6878}, 
+	 {"tablecmds.cpp", 2405}, {"postgres.cpp", 10801}, {"utility.cpp", 6878}, 
 	 {"utility.cpp", 6945}, {"utility.cpp", 7125}, },
 },
 
@@ -4137,7 +4137,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {1058, "42P22",
-	  { {"heap.cpp", 776}, {"createas.cpp", 372}, {"rewriteHandler.cpp", 2815}, 
+	  { {"heap.cpp", 776}, {"createas.cpp", 372}, {"rewriteHandler.cpp", 2818}, 
 	 },
 },
 
@@ -4397,7 +4397,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {1128, "42P18",
-	  { {"parse_param.cpp", 333}, {"prepare.cpp", 141}, {"postgres.cpp", 3364}, 
+	  { {"parse_param.cpp", 333}, {"prepare.cpp", 141}, {"postgres.cpp", 3366}, 
 	 },
 },
 
@@ -4737,7 +4737,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {1220, "23502",
-	  { {"copy.cpp", 3367}, {"execMain.cpp", 2495}, {"vecconstraints.cpp", 106}, 
+	  { {"copy.cpp", 3367}, {"execMain.cpp", 2546}, {"vecconstraints.cpp", 106}, 
 	 },
 },
 
@@ -5418,8 +5418,8 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {1405, "40001",
-	  { {"trigger.cpp", 2685}, {"trigger.cpp", 2723}, {"execMain.cpp", 2971}, 
-	 {"execMain.cpp", 2986}, {"nodeLockRows.cpp", 201}, {"nodeLockRows.cpp", 241}, 
+	  { {"trigger.cpp", 2685}, {"trigger.cpp", 2723}, {"execMain.cpp", 3040}, 
+	 {"execMain.cpp", 3056}, {"nodeLockRows.cpp", 201}, {"nodeLockRows.cpp", 241}, 
 	 {"nodeModifyTable.cpp", 266}, {"nodeModifyTable.cpp", 368}, {"nodeModifyTable.cpp", 1045}, 
 	 {"nodeModifyTable.cpp", 1088}, {"nodeModifyTable.cpp", 1476}, {"nodeModifyTable.cpp", 1541}, 
 	 {"nodeModifyTable.cpp", 1702}, {"nodeModifyTable.cpp", 1761}, {"nodeModifyTable.cpp", 1858}, 
@@ -5429,7 +5429,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {1406, "XX000",
-	  { {"trigger.cpp", 2735}, {"execMain.cpp", 2996}, {"nodeModifyTable.cpp", 384}, 
+	  { {"trigger.cpp", 2735}, {"execMain.cpp", 3067}, {"nodeModifyTable.cpp", 384}, 
 	 {"opfusion.cpp", 2313}, },
 },
 
@@ -6218,32 +6218,32 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {1655, "0A000",
-	  { {"planner.cpp", 3015}, {"planner.cpp", 3196}, {"planner.cpp", 6200}, 
+	  { {"planner.cpp", 3016}, {"planner.cpp", 3197}, {"planner.cpp", 6201}, 
 	 },
 },
 
 	  {1656, "0A000",
-	  { {"planner.cpp", 6418}, },
+	  { {"planner.cpp", 6419}, },
 },
 
 	  {1657, "XX000",
-	  { {"planner.cpp", 6725}, },
+	  { {"planner.cpp", 6726}, },
 },
 
 	  {1658, "XX000",
-	  { {"planner.cpp", 6761}, {"planner.cpp", 6772}, },
+	  { {"planner.cpp", 6762}, {"planner.cpp", 6773}, },
 },
 
 	  {1659, "0A000",
-	  { {"planner.cpp", 7012}, },
+	  { {"planner.cpp", 7013}, },
 },
 
 	  {1660, "0A000",
-	  { {"planner.cpp", 7018}, },
+	  { {"planner.cpp", 7019}, },
 },
 
 	  {1661, "XX000",
-	  { {"planner.cpp", 7116}, },
+	  { {"planner.cpp", 7117}, },
 },
 
 	  {1662, "XX000",
@@ -6344,15 +6344,15 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {1692, "55000",
-	  { {"execMain.cpp", 1587}, },
+	  { {"execMain.cpp", 1609}, },
 },
 
 	  {1693, "55000",
-	  { {"execMain.cpp", 1596}, },
+	  { {"execMain.cpp", 1619}, },
 },
 
 	  {1694, "55000",
-	  { {"execMain.cpp", 1604}, },
+	  { {"execMain.cpp", 1628}, },
 },
 
 	  {1697, "22023",
@@ -6389,7 +6389,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {1706, "42P22",
-	  { {"heap.cpp", 776}, {"createas.cpp", 372}, {"rewriteHandler.cpp", 2815}, 
+	  { {"heap.cpp", 776}, {"createas.cpp", 372}, {"rewriteHandler.cpp", 2818}, 
 	 },
 },
 
@@ -8612,96 +8612,88 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {2387, "XX000",
-	  { {"execMain.cpp", 363}, },
+	  { {"execMain.cpp", 370}, },
 },
 
 	  {2388, "XX000",
-	  { {"execMain.cpp", 1105}, },
+	  { {"execMain.cpp", 1120}, },
 },
 
 	  {2390, "42809",
-	  { {"execMain.cpp", 1573}, },
+	  { {"execMain.cpp", 1593}, },
 },
 
 	  {2391, "42809",
-	  { {"execMain.cpp", 1577}, },
+	  { {"execMain.cpp", 1598}, },
 },
 
 	  {2392, "0A000",
-	  { {"execMain.cpp", 1623}, },
+	  { {"execMain.cpp", 1649}, },
 },
 
 	  {2393, "55000",
-	  { {"execMain.cpp", 1628}, },
+	  { {"execMain.cpp", 1656}, },
 },
 
 	  {2394, "0A000",
-	  { {"execMain.cpp", 1634}, },
+	  { {"execMain.cpp", 1663}, },
 },
 
 	  {2395, "55000",
-	  { {"execMain.cpp", 1639}, },
+	  { {"execMain.cpp", 1670}, },
 },
 
 	  {2396, "0A000",
-	  { {"execMain.cpp", 1645}, },
+	  { {"execMain.cpp", 1677}, },
 },
 
 	  {2397, "55000",
-	  { {"execMain.cpp", 1650}, },
+	  { {"execMain.cpp", 1684}, },
 },
 
 	  {2398, "42809",
-	  { {"execMain.cpp", 1661}, },
+	  { {"execMain.cpp", 1698}, },
 },
 
 	  {2399, "42809",
-	  { {"execMain.cpp", 1681}, },
+	  { {"execMain.cpp", 1719}, },
 },
 
 	  {2400, "42809",
-	  { {"execMain.cpp", 1686}, },
+	  { {"execMain.cpp", 1725}, },
 },
 
 	  {2401, "42809",
-	  { {"execMain.cpp", 1691}, },
+	  { {"execMain.cpp", 1731}, },
 },
 
 	  {2402, "42809",
-	  { {"execMain.cpp", 1708}, },
+	  { {"execMain.cpp", 1749}, },
 },
 
 	  {2403, "42809",
-	  { {"execMain.cpp", 1717}, },
-},
-
-	  {2404, "23514",
-	  { {"execMain.cpp", 2516}, },
-},
-
-	  {2405, "XX000",
-	  { {"execMain.cpp", 2670}, },
+	  { {"execMain.cpp", 1760}, },
 },
 
 	  {2407, "XX000",
-	  { {"execMain.cpp", 2907}, },
+	  { {"execMain.cpp", 2963}, },
 },
 
 	  {2408, "40001",
-	  { {"execMain.cpp", 2921}, {"heapam.cpp", 3889}, {"heapam.cpp", 4361}, 
+	  { {"execMain.cpp", 2979}, {"heapam.cpp", 3889}, {"heapam.cpp", 4361}, 
 	 },
 },
 
 	  {2409, "XX000",
-	  { {"execMain.cpp", 3144}, },
+	  { {"execMain.cpp", 3214}, },
 },
 
 	  {2410, "XX000",
-	  { {"execMain.cpp", 3219}, {"nodeLockRows.cpp", 329}, },
+	  { {"execMain.cpp", 3290}, {"nodeLockRows.cpp", 329}, },
 },
 
 	  {2411, "XX000",
-	  { {"execMain.cpp", 3219}, {"nodeLockRows.cpp", 329}, },
+	  { {"execMain.cpp", 3290}, {"nodeLockRows.cpp", 329}, },
 },
 
 	  {2412, "XX000",
@@ -13167,7 +13159,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {3606, "22023",
-	  { {"fastpath.cpp", 164}, {"fastpath.cpp", 529}, {"postgres.cpp", 10647}, 
+	  { {"fastpath.cpp", 164}, {"fastpath.cpp", 529}, {"postgres.cpp", 10649}, 
 	 {"printtup.cpp", 705}, },
 },
 
@@ -13657,7 +13649,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 
 	  {3736, "XX000",
 	  { {"ruleutils.cpp", 1261}, {"ruleutils.cpp", 11148}, {"catcache.cpp", 961}, 
-	 {"relcache.cpp", 5584}, {"allpaths.cpp", 1073}, {"createplan.cpp", 2278}, 
+	 {"relcache.cpp", 5584}, {"allpaths.cpp", 1074}, {"createplan.cpp", 2278}, 
 	 {"planrewrite.cpp", 649}, {"pgxcship.cpp", 2856}, {"heapam.cpp", 1272}, 
 	 {"heapam.cpp", 1327}, },
 },
@@ -13680,7 +13672,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {3742, "XX000",
-	  { {"trigger.cpp", 2669}, {"execMain.cpp", 2956}, {"nodeLockRows.cpp", 188}, 
+	  { {"trigger.cpp", 2669}, {"execMain.cpp", 3024}, {"nodeLockRows.cpp", 188}, 
 	 {"opfusion.cpp", 2222}, {"heapam.cpp", 5324}, },
 },
 
@@ -13819,7 +13811,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {3787, "XX000",
-	  { {"rewriteHandler.cpp", 659}, {"rewriteHandler.cpp", 1994}, },
+	  { {"rewriteHandler.cpp", 659}, {"rewriteHandler.cpp", 1995}, },
 },
 
 	  {3788, "42601",
@@ -13840,43 +13832,43 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 
 	  {3793, "XX000",
 	  { {"analyze.cpp", 3676}, {"planner.cpp", 411}, {"rewriteHandler.cpp", 1521}, 
-	 {"rewriteHandler.cpp", 2392}, {"rewriteHandler.cpp", 2406}, },
+	 {"rewriteHandler.cpp", 2393}, {"rewriteHandler.cpp", 2407}, },
 },
 
 	  {3794, "42P17",
-	  { {"rewriteHandler.cpp", 2444}, {"rewriteHandler.cpp", 2511}, },
+	  { {"rewriteHandler.cpp", 2445}, {"rewriteHandler.cpp", 2512}, },
 },
 
 	  {3795, "0A000",
-	  { {"rewriteHandler.cpp", 2263}, },
+	  { {"rewriteHandler.cpp", 2264}, },
 },
 
 	  {3796, "0A000",
-	  { {"rewriteHandler.cpp", 2275}, },
+	  { {"rewriteHandler.cpp", 2276}, },
 },
 
 	  {3797, "0A000",
-	  { {"rewriteHandler.cpp", 2279}, },
+	  { {"rewriteHandler.cpp", 2280}, },
 },
 
 	  {3799, "0A000",
-	  { {"rewriteHandler.cpp", 2186}, },
+	  { {"rewriteHandler.cpp", 2187}, },
 },
 
 	  {3800, "0A000",
-	  { {"rewriteHandler.cpp", 2193}, },
+	  { {"rewriteHandler.cpp", 2194}, },
 },
 
 	  {3801, "0A000",
-	  { {"rewriteHandler.cpp", 2200}, },
+	  { {"rewriteHandler.cpp", 2201}, },
 },
 
 	  {3802, "0A000",
-	  { {"rewriteHandler.cpp", 2625}, },
+	  { {"rewriteHandler.cpp", 2626}, },
 },
 
 	  {3803, "XX000",
-	  { {"rewriteHandler.cpp", 2972}, {"rewriteHandler.cpp", 3091}, },
+	  { {"rewriteHandler.cpp", 2975}, {"rewriteHandler.cpp", 3094}, },
 },
 
 	  {3804, "XX000",
@@ -14931,7 +14923,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {4149, "40001",
-	  { {"postgres.cpp", 6017}, {"standby.cpp", 459}, },
+	  { {"postgres.cpp", 6019}, {"standby.cpp", 459}, },
 },
 
 	  {4152, "08006",
@@ -15124,84 +15116,84 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {4214, "08P01",
-	  { {"postgres.cpp", 2840}, {"postgres.cpp", 3534}, {"postgres.cpp", 3884}, 
-	 {"postgres.cpp", 4273}, {"postgres.cpp", 10482}, },
+	  { {"postgres.cpp", 2842}, {"postgres.cpp", 3536}, {"postgres.cpp", 3886}, 
+	 {"postgres.cpp", 4275}, {"postgres.cpp", 10484}, },
 },
 
 	  {4215, "42601",
-	  { {"postgres.cpp", 3252}, },
+	  { {"postgres.cpp", 3254}, },
 },
 
 	  {4217, "08P01",
-	  { {"postgres.cpp", 3542}, {"postgres.cpp", 4281}, {"postgres.cpp", 10489}, 
+	  { {"postgres.cpp", 3544}, {"postgres.cpp", 4283}, {"postgres.cpp", 10491}, 
 	 },
 },
 
 	  {4218, "22P03",
-	  { {"postgres.cpp", 3693}, {"postgres.cpp", 3963}, {"postgres.cpp", 4467}, 
-	 {"postgres.cpp", 10644}, {"opfusion.cpp", 627}, },
+	  { {"postgres.cpp", 3695}, {"postgres.cpp", 3965}, {"postgres.cpp", 4469}, 
+	 {"postgres.cpp", 10646}, {"opfusion.cpp", 627}, },
 },
 
 	  {4219, "34000",
-	  { {"postgres.cpp", 4668}, {"postgres.cpp", 5242}, },
+	  { {"postgres.cpp", 4670}, {"postgres.cpp", 5244}, },
 },
 
 	  {4220, "22P01",
-	  { {"postgres.cpp", 5631}, },
+	  { {"postgres.cpp", 5633}, },
 },
 
 	  {4221, "XX000",
-	  { {"postgres.cpp", 5768}, },
+	  { {"postgres.cpp", 5770}, },
 },
 
 	  {4222, "57P01",
-	  { {"postgres.cpp", 5873}, },
+	  { {"postgres.cpp", 5875}, },
 },
 
 	  {4223, "40001",
-	  { {"postgres.cpp", 5885}, {"postgres.cpp", 5893}, {"postgres.cpp", 6012}, 
+	  { {"postgres.cpp", 5887}, {"postgres.cpp", 5895}, {"postgres.cpp", 6014}, 
 	 },
 },
 
 	  {4224, "40001",
-	  { {"postgres.cpp", 5885}, {"postgres.cpp", 5893}, {"postgres.cpp", 6012}, 
+	  { {"postgres.cpp", 5887}, {"postgres.cpp", 5895}, {"postgres.cpp", 6014}, 
 	 },
 },
 
 	  {4225, "57P01",
-	  { {"postgres.cpp", 5900}, },
+	  { {"postgres.cpp", 5902}, },
 },
 
 	  {4226, "08006",
-	  { {"postgres.cpp", 5925}, },
+	  { {"postgres.cpp", 5927}, },
 },
 
 	  {4229, "57014",
-	  { {"postgres.cpp", 5993}, },
+	  { {"postgres.cpp", 5995}, },
 },
 
 	  {4230, "40001",
-	  { {"postgres.cpp", 6017}, {"standby.cpp", 459}, },
+	  { {"postgres.cpp", 6019}, {"standby.cpp", 459}, },
 },
 
 	  {4231, "57014",
-	  { {"postgres.cpp", 6053}, },
+	  { {"postgres.cpp", 6055}, },
 },
 
 	  {4232, "54001",
-	  { {"postgres.cpp", 6161}, },
+	  { {"postgres.cpp", 6163}, },
 },
 
 	  {4233, "42601",
-	  { {"postgres.cpp", 6549}, },
+	  { {"postgres.cpp", 6551}, },
 },
 
 	  {4235, "42601",
-	  { {"postgres.cpp", 6618}, },
+	  { {"postgres.cpp", 6620}, },
 },
 
 	  {4236, "42601",
-	  { {"postgres.cpp", 6622}, },
+	  { {"postgres.cpp", 6624}, },
 },
 
 	  {4237, "XX000",
@@ -15209,19 +15201,19 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {4238, "22023",
-	  { {"postgres.cpp", 6913}, },
+	  { {"postgres.cpp", 6915}, },
 },
 
 	  {4239, "08P01",
-	  { {"postgres.cpp", 8427}, },
+	  { {"postgres.cpp", 8429}, },
 },
 
 	  {4240, "08P01",
-	  { {"postgres.cpp", 8475}, },
+	  { {"postgres.cpp", 8477}, },
 },
 
 	  {4241, "XX000",
-	  { {"postgres.cpp", 8813}, },
+	  { {"postgres.cpp", 8815}, },
 },
 
 	  {4242, "25006",
@@ -15873,10 +15865,6 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 
 	  {4518, "0A000",
 	  { {"utility.cpp", 4974}, },
-},
-
-	  {4520, "0A000",
-	  { {"utility.cpp", 5004}, },
 },
 
 	  {4521, "0A000",
@@ -16896,7 +16884,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {4864, "XX000",
-	  { {"gs_matview.cpp", 513}, {"matview.cpp", 1029}, {"rewriteHandler.cpp", 3038}, 
+	  { {"gs_matview.cpp", 513}, {"matview.cpp", 1029}, {"rewriteHandler.cpp", 3041}, 
 	 },
 },
 
@@ -17066,7 +17054,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 	  {4906, "42809",
 	  { {"objectaddress.cpp", 554}, {"matview.cpp", 812}, {"matview.cpp", 901}, 
 	 {"matview.cpp", 990}, {"matview.cpp", 1087}, {"tablecmds.cpp", 16786}, 
-	 {"rewriteHandler.cpp", 3025}, },
+	 {"rewriteHandler.cpp", 3028}, },
 },
 
 	  {4907, "42809",
@@ -23733,47 +23721,47 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {6550, "20000",
-	  { {"allpaths.cpp", 1044}, },
+	  { {"allpaths.cpp", 1045}, },
 },
 
 	  {6551, "XX008",
-	  { {"allpaths.cpp", 2801}, },
+	  { {"allpaths.cpp", 2802}, },
 },
 
 	  {6552, "XX008",
-	  { {"allpaths.cpp", 2834}, },
+	  { {"allpaths.cpp", 2835}, },
 },
 
 	  {6553, "XX008",
-	  { {"allpaths.cpp", 2840}, },
+	  { {"allpaths.cpp", 2841}, },
 },
 
 	  {6554, "XX008",
-	  { {"allpaths.cpp", 2915}, {"allpaths.cpp", 2925}, },
+	  { {"allpaths.cpp", 2916}, {"allpaths.cpp", 2926}, },
 },
 
 	  {6555, "XX008",
-	  { {"allpaths.cpp", 2933}, },
+	  { {"allpaths.cpp", 2934}, },
 },
 
 	  {6556, "XX004",
-	  { {"allpaths.cpp", 2989}, },
+	  { {"allpaths.cpp", 2990}, },
 },
 
 	  {6557, "XX004",
-	  { {"allpaths.cpp", 3269}, },
+	  { {"allpaths.cpp", 3270}, },
 },
 
 	  {6558, "20000",
-	  { {"allpaths.cpp", 3366}, {"allpaths.cpp", 3375}, },
+	  { {"allpaths.cpp", 3367}, {"allpaths.cpp", 3376}, },
 },
 
 	  {6559, "XX004",
-	  { {"allpaths.cpp", 3592}, },
+	  { {"allpaths.cpp", 3593}, },
 },
 
 	  {6560, "XX004",
-	  { {"allpaths.cpp", 3917}, },
+	  { {"allpaths.cpp", 3918}, },
 },
 
 	  {6561, "0A000",
@@ -23865,11 +23853,11 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {6583, "XX004",
-	  { {"joinpath.cpp", 1238}, },
+	  { {"joinpath.cpp", 1243}, },
 },
 
 	  {6584, "XX004",
-	  { {"joinpath.cpp", 2465}, },
+	  { {"joinpath.cpp", 2470}, },
 },
 
 	  {6585, "XX004",
@@ -24041,39 +24029,39 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {6630, "D0011",
-	  { {"planner.cpp", 4188}, },
+	  { {"planner.cpp", 4189}, },
 },
 
 	  {6631, "XX004",
-	  { {"planner.cpp", 4713}, },
+	  { {"planner.cpp", 4714}, },
 },
 
 	  {6632, "XX008",
-	  { {"planner.cpp", 11745}, },
+	  { {"planner.cpp", 11746}, },
 },
 
 	  {6633, "22012",
-	  { {"planner.cpp", 12176}, },
+	  { {"planner.cpp", 12177}, },
 },
 
 	  {6634, "22004",
-	  { {"planner.cpp", 12577}, },
+	  { {"planner.cpp", 12578}, },
 },
 
 	  {6635, "XX008",
-	  { {"planner.cpp", 12603}, },
+	  { {"planner.cpp", 12604}, },
 },
 
 	  {6636, "01000",
-	  { {"planner.cpp", 12815}, },
+	  { {"planner.cpp", 12816}, },
 },
 
 	  {6637, "0A000",
-	  { {"planner.cpp", 13699}, },
+	  { {"planner.cpp", 13700}, },
 },
 
 	  {6638, "P0002",
-	  { {"planner.cpp", 13799}, },
+	  { {"planner.cpp", 13800}, },
 },
 
 	  {6639, "XX008",
@@ -24234,15 +24222,15 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {6678, "42P17",
-	  { {"rewriteHandler.cpp", 1862}, },
+	  { {"rewriteHandler.cpp", 1863}, },
 },
 
 	  {6679, "29000",
-	  { {"rewriteHandler.cpp", 2399}, },
+	  { {"rewriteHandler.cpp", 2400}, },
 },
 
 	  {6680, "42601",
-	  { {"rewriteHandler.cpp", 2859}, },
+	  { {"rewriteHandler.cpp", 2862}, },
 },
 
 	  {6681, "XX000",
@@ -24921,7 +24909,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {6853, "42601",
-	  { {"postmaster.cpp", 1282}, {"postgres.cpp", 6533}, },
+	  { {"postmaster.cpp", 1282}, {"postgres.cpp", 6535}, },
 },
 
 	  {6854, "XX000",
@@ -25154,10 +25142,10 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 
 	  {6911, "25P02",
 	  { {"streamMain.cpp", 437}, {"fastpath.cpp", 304}, {"postgres.cpp", 1414}, 
-	 {"postgres.cpp", 2359}, {"postgres.cpp", 2983}, {"postgres.cpp", 3231}, 
-	 {"postgres.cpp", 3278}, {"postgres.cpp", 3558}, {"postgres.cpp", 4297}, 
-	 {"postgres.cpp", 4795}, {"postgres.cpp", 5190}, {"postgres.cpp", 5260}, 
-	 {"postgres.cpp", 9557}, {"postgres.cpp", 10505}, {"lightProxy.cpp", 1116}, 
+	 {"postgres.cpp", 2361}, {"postgres.cpp", 2985}, {"postgres.cpp", 3233}, 
+	 {"postgres.cpp", 3280}, {"postgres.cpp", 3560}, {"postgres.cpp", 4299}, 
+	 {"postgres.cpp", 4797}, {"postgres.cpp", 5192}, {"postgres.cpp", 5262}, 
+	 {"postgres.cpp", 9559}, {"postgres.cpp", 10507}, {"lightProxy.cpp", 1116}, 
 	 {"heapam.cpp", 1259}, },
 },
 
@@ -25194,7 +25182,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {6920, "XX005",
-	  { {"postgres.cpp", 1311}, {"postgres.cpp", 2787}, },
+	  { {"postgres.cpp", 1311}, {"postgres.cpp", 2789}, },
 },
 
 	  {6921, "42601",
@@ -25234,227 +25222,227 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {6930, "HV027",
-	  { {"postgres.cpp", 2412}, {"postgres.cpp", 3337}, },
+	  { {"postgres.cpp", 2414}, {"postgres.cpp", 3339}, },
 },
 
 	  {6931, "HV026",
-	  { {"postgres.cpp", 2417}, {"postgres.cpp", 4114}, },
+	  { {"postgres.cpp", 2419}, {"postgres.cpp", 4116}, },
 },
 
 	  {6932, "HV025",
-	  { {"postgres.cpp", 2423}, {"postgres.cpp", 4120}, },
+	  { {"postgres.cpp", 2425}, {"postgres.cpp", 4122}, },
 },
 
 	  {6933, "HV028",
-	  { {"postgres.cpp", 2436}, {"postgres.cpp", 3347}, },
+	  { {"postgres.cpp", 2438}, {"postgres.cpp", 3349}, },
 },
 
 	  {6934, "0A000",
-	  { {"postgres.cpp", 2775}, },
+	  { {"postgres.cpp", 2777}, },
 },
 
 	  {6935, "XX006",
-	  { {"postgres.cpp", 2779}, },
+	  { {"postgres.cpp", 2781}, },
 },
 
 	  {6936, "58000",
-	  { {"postgres.cpp", 3752}, {"postgres.cpp", 10001}, },
+	  { {"postgres.cpp", 3754}, {"postgres.cpp", 10003}, },
 },
 
 	  {6937, "58030",
-	  { {"postgres.cpp", 3844}, },
+	  { {"postgres.cpp", 3846}, },
 },
 
 	  {6938, "25000",
-	  { {"postgres.cpp", 3850}, },
+	  { {"postgres.cpp", 3852}, },
 },
 
 	  {6939, "XX001",
-	  { {"postgres.cpp", 4050}, },
+	  { {"postgres.cpp", 4052}, },
 },
 
 	  {6940, "08P01",
-	  { {"postgres.cpp", 4053}, {"postgres.cpp", 10341}, },
+	  { {"postgres.cpp", 4055}, {"postgres.cpp", 10343}, },
 },
 
 	  {6941, "XX005",
-	  { {"postgres.cpp", 4676}, },
+	  { {"postgres.cpp", 4678}, },
 },
 
 	  {6942, "57P01",
-	  { {"postgres.cpp", 5878}, },
+	  { {"postgres.cpp", 5880}, },
 },
 
 	  {6943, "57P01",
-	  { {"postgres.cpp", 5897}, },
+	  { {"postgres.cpp", 5899}, },
 },
 
 	  {6944, "57014",
-	  { {"postgres.cpp", 5915}, },
+	  { {"postgres.cpp", 5917}, },
 },
 
 	  {6945, "57014",
-	  { {"postgres.cpp", 5941}, },
+	  { {"postgres.cpp", 5943}, },
 },
 
 	  {6946, "57014",
-	  { {"postgres.cpp", 5948}, },
+	  { {"postgres.cpp", 5950}, },
 },
 
 	  {6947, "XX000",
-	  { {"postgres.cpp", 5985}, },
-},
-
-	  {6948, "XX000",
 	  { {"postgres.cpp", 5987}, },
 },
 
+	  {6948, "XX000",
+	  { {"postgres.cpp", 5989}, },
+},
+
 	  {6949, "57014",
-	  { {"postgres.cpp", 5999}, },
+	  { {"postgres.cpp", 6001}, },
 },
 
 	  {6950, "08000",
-	  { {"postgres.cpp", 6049}, },
+	  { {"postgres.cpp", 6051}, },
 },
 
 	  {6951, "57014",
-	  { {"postgres.cpp", 6058}, },
+	  { {"postgres.cpp", 6060}, },
 },
 
 	  {6952, "42601",
-	  { {"postgres.cpp", 6566}, },
+	  { {"postgres.cpp", 6568}, },
 },
 
 	  {6953, "42601",
-	  { {"postgres.cpp", 6592}, },
+	  { {"postgres.cpp", 6594}, },
 },
 
 	  {6954, "25001",
-	  { {"postgres.cpp", 6681}, },
+	  { {"postgres.cpp", 6683}, },
 },
 
 	  {6955, "22000",
-	  { {"postgres.cpp", 6730}, },
+	  { {"postgres.cpp", 6732}, },
 },
 
 	  {6956, "08P01",
-	  { {"postgres.cpp", 7857}, {"postgres.cpp", 8603}, },
+	  { {"postgres.cpp", 7859}, {"postgres.cpp", 8605}, },
 },
 
 	  {6957, "XX005",
-	  { {"postgres.cpp", 7884}, },
+	  { {"postgres.cpp", 7886}, },
 },
 
 	  {6958, "0A000",
-	  { {"postgres.cpp", 7888}, {"postgres.cpp", 8191}, },
+	  { {"postgres.cpp", 7890}, {"postgres.cpp", 8193}, },
 },
 
 	  {6959, "0A000",
-	  { {"postgres.cpp", 7928}, },
+	  { {"postgres.cpp", 7930}, },
 },
 
 	  {6960, "58000",
-	  { {"postgres.cpp", 7944}, },
+	  { {"postgres.cpp", 7946}, },
 },
 
 	  {6961, "0A000",
-	  { {"postgres.cpp", 8018}, },
+	  { {"postgres.cpp", 8020}, },
 },
 
 	  {6962, "08P01",
-	  { {"postgres.cpp", 8028}, },
+	  { {"postgres.cpp", 8030}, },
 },
 
 	  {6963, "08P01",
-	  { {"postgres.cpp", 8085}, },
+	  { {"postgres.cpp", 8087}, },
 },
 
 	  {6964, "08P01",
-	  { {"postgres.cpp", 8252}, },
+	  { {"postgres.cpp", 8254}, },
 },
 
 	  {6965, "0A000",
-	  { {"postgres.cpp", 8299}, },
+	  { {"postgres.cpp", 8301}, },
 },
 
 	  {6966, "0A000",
-	  { {"postgres.cpp", 8391}, },
+	  { {"postgres.cpp", 8393}, },
 },
 
 	  {6967, "08P01",
-	  { {"postgres.cpp", 8441}, },
+	  { {"postgres.cpp", 8443}, },
 },
 
 	  {6968, "58000",
-	  { {"postgres.cpp", 8758}, {"postgres.cpp", 9004}, },
+	  { {"postgres.cpp", 8760}, {"postgres.cpp", 9006}, },
 },
 
 	  {6969, "XX000",
-	  { {"postgres.cpp", 8955}, },
+	  { {"postgres.cpp", 8957}, },
 },
 
 	  {6970, "58000",
-	  { {"postgres.cpp", 9013}, },
+	  { {"postgres.cpp", 9015}, },
 },
 
 	  {6971, "XX000",
-	  { {"postgres.cpp", 9422}, },
+	  { {"postgres.cpp", 9424}, },
 },
 
 	  {6972, "58000",
-	  { {"postgres.cpp", 9957}, },
+	  { {"postgres.cpp", 9959}, },
 },
 
 	  {6973, "0A000",
-	  { {"postgres.cpp", 10030}, },
+	  { {"postgres.cpp", 10032}, },
 },
 
 	  {6974, "58000",
-	  { {"postgres.cpp", 10042}, {"postgres.cpp", 10067}, },
+	  { {"postgres.cpp", 10044}, {"postgres.cpp", 10069}, },
 },
 
 	  {6975, "22023",
-	  { {"postgres.cpp", 10122}, },
+	  { {"postgres.cpp", 10124}, },
 },
 
 	  {6976, "22023",
-	  { {"postgres.cpp", 10169}, },
+	  { {"postgres.cpp", 10171}, },
 },
 
 	  {6977, "08P01",
-	  { {"postgres.cpp", 10332}, },
+	  { {"postgres.cpp", 10334}, },
 },
 
 	  {6978, "0A000",
-	  { {"postgres.cpp", 10345}, },
+	  { {"postgres.cpp", 10347}, },
 },
 
 	  {6979, "08P01",
-	  { {"postgres.cpp", 10454}, {"postgres.cpp", 10468}, },
+	  { {"postgres.cpp", 10456}, {"postgres.cpp", 10470}, },
 },
 
 	  {6980, "08P01",
-	  { {"postgres.cpp", 10689}, },
+	  { {"postgres.cpp", 10691}, },
 },
 
 	  {6981, "08P01",
-	  { {"postgres.cpp", 10696}, },
+	  { {"postgres.cpp", 10698}, },
 },
 
 	  {6982, "08P01",
-	  { {"postgres.cpp", 10700}, },
+	  { {"postgres.cpp", 10702}, },
 },
 
 	  {6983, "08P01",
-	  { {"postgres.cpp", 10715}, },
+	  { {"postgres.cpp", 10717}, },
 },
 
 	  {6984, "0A000",
-	  { {"postgres.cpp", 10721}, },
+	  { {"postgres.cpp", 10723}, },
 },
 
 	  {6985, "08P01",
-	  { {"postgres.cpp", 10726}, },
+	  { {"postgres.cpp", 10728}, },
 },
 
 	  {6986, "XX004",
@@ -25866,43 +25854,39 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {7086, "XX004",
-	  { {"execMain.cpp", 1322}, },
+	  { {"execMain.cpp", 1338}, },
 },
 
 	  {7087, "XX004",
-	  { {"execMain.cpp", 1609}, },
-},
-
-	  {7088, "XX004",
-	  { {"execMain.cpp", 1655}, },
+	  { {"execMain.cpp", 1634}, },
 },
 
 	  {7090, "42809",
-	  { {"execMain.cpp", 1703}, },
+	  { {"execMain.cpp", 1743}, },
 },
 
 	  {7091, "42809",
-	  { {"execMain.cpp", 1713}, },
+	  { {"execMain.cpp", 1755}, },
 },
 
 	  {7092, "XX007",
-	  { {"execMain.cpp", 2701}, },
+	  { {"execMain.cpp", 2755}, },
 },
 
 	  {7093, "XX007",
-	  { {"execMain.cpp", 2711}, },
+	  { {"execMain.cpp", 2766}, },
 },
 
 	  {7094, "XX007",
-	  { {"execMain.cpp", 2721}, },
+	  { {"execMain.cpp", 2777}, },
 },
 
 	  {7095, "XX007",
-	  { {"execMain.cpp", 2732}, },
+	  { {"execMain.cpp", 2789}, },
 },
 
 	  {7096, "29P02",
-	  { {"execMain.cpp", 3206}, },
+	  { {"execMain.cpp", 3277}, },
 },
 
 	  {7097, "XX007",
@@ -25923,11 +25907,11 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {7101, "XX004",
-	  { {"execProcnode.cpp", 839}, },
+	  { {"execProcnode.cpp", 840}, },
 },
 
 	  {7102, "XX004",
-	  { {"execProcnode.cpp", 1350}, },
+	  { {"execProcnode.cpp", 1351}, },
 },
 
 	  {7103, "2202E",
@@ -30511,20 +30495,20 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {8249, "08P01",
-	  { {"postgres.cpp", 641}, {"postgres.cpp", 9091}, },
+	  { {"postgres.cpp", 641}, {"postgres.cpp", 9093}, },
 },
 
 	  {8250, "26010",
-	  { {"postgres.cpp", 4073}, {"postgres.cpp", 5151}, {"postgres.cpp", 10359}, 
+	  { {"postgres.cpp", 4075}, {"postgres.cpp", 5153}, {"postgres.cpp", 10361}, 
 	 },
 },
 
 	  {8251, "XX000",
-	  { {"postgres.cpp", 9361}, {"postgres.cpp", 9367}, },
+	  { {"postgres.cpp", 9363}, {"postgres.cpp", 9369}, },
 },
 
 	  {8252, "42809",
-	  { {"execMain.cpp", 1696}, },
+	  { {"execMain.cpp", 1737}, },
 },
 
 	  {8253, "08006",
@@ -30612,7 +30596,7 @@ static const mppdb_err_msg_t g_mppdb_errors[] =
 },
 
 	  {8275, "HV025",
-	  { {"postgres.cpp", 2429}, {"postgres.cpp", 4126}, },
+	  { {"postgres.cpp", 2431}, {"postgres.cpp", 4128}, },
 },
 
 	  {8276, "55000",

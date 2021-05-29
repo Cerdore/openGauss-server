@@ -5000,9 +5000,9 @@ void standard_ProcessUtility(Node* parse_tree, const char* query_string, ParamLi
             break;
 
         case T_LoadStmt:
-#ifdef PGXC
-            ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("LOAD statement is not yet supported.")));
-#endif /* PGXC */
+//cxs #ifdef PGXC
+//             ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("LOAD statement is not yet supported.")));
+// #endif /* PGXC */
             {
                 LoadStmt* stmt = (LoadStmt*)parse_tree;
 
@@ -5010,10 +5010,10 @@ void standard_ProcessUtility(Node* parse_tree, const char* query_string, ParamLi
                 /* Allowed names are restricted if you're not superuser */
                 load_file(stmt->filename, !superuser());
             }
-#ifdef PGXC
-            if (IS_PGXC_COORDINATOR)
-                ExecUtilityStmtOnNodes(query_string, NULL, sent_to_remote, false, EXEC_ON_DATANODES, false);
-#endif
+//cxs #ifdef PGXC
+//             if (IS_PGXC_COORDINATOR)
+//                 ExecUtilityStmtOnNodes(query_string, NULL, sent_to_remote, false, EXEC_ON_DATANODES, false);
+// #endif
             break;
 
         case T_ClusterStmt:

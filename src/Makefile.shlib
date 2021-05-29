@@ -74,16 +74,14 @@
 # bjm 2001-02-10
 
 
-COMPILER = $(CC) -I /usr/local/cuda/include $(CXXFLAGS)
+COMPILER = $(CC) $(CXXFLAGS)
 
-$(info    COMPILER is $(COMPILER))
 
 LINK.static = $(AR) $(AROPT)
 
 
 
 ifdef SO_MAJOR_VERSION
-$(info    SO_MAJOR_VERSION is $(SO_MAJOR_VERSION))
 # Default library naming convention used by the majority of platforms
 ifeq ($(enable_shared), yes)
 shlib		= lib$(NAME)$(DLSUFFIX).$(SO_MAJOR_VERSION).$(SO_MINOR_VERSION)
@@ -337,16 +335,16 @@ endif
 
 all-lib: all-shared-lib
 ifdef soname
-$(info    line340 in shlib: soname is $(soname))
+# $(info    line340 in shlib: soname is $(soname))
 # no static library when building a dynamically loadable module
 all-lib: all-static-lib
 endif
 
 all-static-lib: $(stlib)
-$(info    line346 in shlib: stlib is $(shlib))
+# $(info    line346 in shlib: stlib is $(shlib))
 
 all-shared-lib: $(shlib)
-$(info    line348 in shlib: shlib is $(shlib))
+# $(info    line348 in shlib: shlib is $(shlib))
 
 ifndef haslibarule
 $(stlib): $(OBJS) | $(SHLIB_PREREQS)
@@ -360,7 +358,6 @@ ifeq (,$(filter cygwin win32,$(PORTNAME)))
 ifneq ($(PORTNAME), aix)
 
 # Normal case
-$(info    line363: we are here $(CXXFLAGS))
 $(shlib): $(OBJS) | $(SHLIB_PREREQS)
 	$(LINK.shared) -o $@ $(OBJS) $(LDFLAGS) $(LDFLAGS_SL) $(SHLIB_LINK)
 ifdef shlib_major
@@ -396,9 +393,7 @@ $(shlib) $(stlib): $(OBJS) | $(SHLIB_PREREQS)
 	$(LINK.static) $(stlib) $^
 	$(RANLIB) $(stlib)
 	$(MKLDEXPORT) $(stlib) >$(exports_file)
-  $(info    here here we are here $(CXXFLAGS))
 	$(COMPILER) -o $(shlib) $(stlib) -Wl,-bE:$(exports_file) $(LDFLAGS) $(LDFLAGS_SL) $(SHLIB_LINK)
-  $(info    line400 in shlib: CXXFLAGS is $(COMPILER) -o $(shlib) $(stlib) -Wl,-bE:$(exports_file) $(LDFLAGS) $(LDFLAGS_SL) $(SHLIB_LINK))
 	rm -f $(stlib)
 	$(AR) $(AROPT) $(stlib) $(shlib)
 

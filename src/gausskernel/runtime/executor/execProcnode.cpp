@@ -777,7 +777,7 @@ TupleTableSlot* ExecProcNode(PlanState* node)
 
     if (node->instrument != NULL) {
         ExecProcNodeInstr(node, result);
-    
+    }
 
     MemoryContextSwitchTo(old_context);
 

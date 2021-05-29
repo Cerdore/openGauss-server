@@ -1,31 +1,26 @@
 /*
  * @Author: your name
  * @Date: 2021-05-14 03:07:38
- * @LastEditTime: 2021-05-25 06:37:58
+ * @LastEditTime: 2021-05-29 12:59:39
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/GpuJoin/ResultBuffer.hpp
  */
 #ifndef RESULTBUFFER_HEAD_
 #define RESULTBUFFER_HEAD_
-struct Result {
-    int key1;
-    double dval1;
-    int key2;
-    double dval2;
-};
+
 class ResultBuffer {
 public:
     static constexpr std::size_t BUFSIZE = 1024UL * 1024UL * 128;
     // static constexpr std::size_t BUFSIZE = 30UL;
 private:
     struct Result* buffer;
-    int size;
+    long size;
     
     std::atomic_long content_size;
 
 public:
-int index;
+std::atomic_long index;
     ResultBuffer(void)
     {
         this->init();
@@ -50,8 +45,8 @@ int index;
     void init(void)
     {
         this->size = 100;
-        this->index = 0;
-        this->buffer = (struct Result*)palloc(100 * sizeof(struct Result));
+        this->index.store(0, std::memory_order_relaxed);// = 0;
+        this->buffer = (struct Result*)malloc(100 * sizeof(struct Result));
         // this->buffer = palloc(ResultBuffer::BUFSIZE);
         // this->buffer = NULL;
         this->content_size.store(0, std::memory_order_relaxed);
@@ -73,8 +68,8 @@ int index;
     // void put(int k, double v)
     void put(int k1, double v1, int k2, double v2)
     {
-        while (this->checkOverflow())
-            this->extendBuffer();
+        // while (this->checkOverflow())
+        //     this->extendBuffer();
         //(this->buffer + this->index) = tp;
         (this->buffer + this->index)->key1 = k1;
         (this->buffer + this->index)->dval1 = v1;

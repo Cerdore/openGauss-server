@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-05-14 03:08:11
- * @LastEditTime: 2021-05-25 07:22:18
+ * @LastEditTime: 2021-05-29 08:28:05
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/GpuJoin/TupleBuffer.cpp
@@ -78,8 +78,10 @@ long tupleNum;
 
     void putTuple(TupleTableSlot* tts)
     {
+        
         std::size_t tuple_size = TupleBuffer::getTupleSize(tts);
-
+        //tuple size is 16 ---- ereport(LOG,(errmsg("Tuple size is %lu\n", tuple_size)));
+         
         while (this->checkOverflow(tuple_size))
             this->extendBuffer();
 

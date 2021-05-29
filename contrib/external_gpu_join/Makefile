@@ -23,6 +23,8 @@ endif
 # CC = g++  -I ../../src/gausskernel -I /usr/local/cuda/include
 
 CXX = g++ -L/usr/local/cuda/lib64 -lcutil -lcudpp -lcuda -lcudart -I/usr/local/cuda/include -I ../../src/gausskernel
+
+CC += -L/usr/local/cuda/lib64 -lcuda -lcudart
 # CXX = g++ -I /usr/local/cuda/include
 # CXXFLAGS = -I /usr/local/cuda/include # -fPIC -std=c++11 -Wno-deprecated-register -Wno-deprecated-declarations -Wall
 # $(info    line27: CXXFLAGS is $(CXXFLAGS))

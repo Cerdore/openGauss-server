@@ -134,7 +134,7 @@ extern inline bool is_errmodule_enable(int elevel, ModuleId mod_id);
 //cxs
 /***********  Hook for plugins to get control in ExecProcNode() ***********/
 typedef TupleTableSlot *(*ExecProcNode_hook_type) (PlanState *node);
-extern PGDLLIMPORT ExecProcNode_hook_type ExecProcNode_hook;
+extern THR_LOCAL PGDLLIMPORT ExecProcNode_hook_type ExecProcNode_hook;
 /**************************************************************************/
 
 /* Hook for plugins to get control in ExecutorStart() */

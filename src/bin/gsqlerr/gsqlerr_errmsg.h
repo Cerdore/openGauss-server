@@ -9894,16 +9894,6 @@ static const gsqlerr_err_msg_t g_gsqlerr_errors[] =
 	   "This is an internal error",
 	   "Please contact engineer to support."}},
 
-	  {2404, "23514",
-	  {"new row for relation '%s' violates check constraint '%s'",
-	   "This is an internal error",
-	   "Please contact engineer to support."}},
-
-	  {2405, "XX000",
-	  {"failed to find ExecRowMark for rangetable index %u",
-	   "This is an internal error",
-	   "Please contact engineer to support."}},
-
 	  {2407, "XX000",
 	  {"t_xmin is uncommitted in tuple to be updated",
 	   "This is an internal error",
@@ -18321,11 +18311,6 @@ static const gsqlerr_err_msg_t g_gsqlerr_errors[] =
 
 	  {4518, "0A000",
 	  {"LISTEN statement is not yet supported.",
-	   "This is an internal error",
-	   "Please contact engineer to support."}},
-
-	  {4520, "0A000",
-	  {"LOAD statement is not yet supported.",
 	   "This is an internal error",
 	   "Please contact engineer to support."}},
 
@@ -30581,11 +30566,6 @@ static const gsqlerr_err_msg_t g_gsqlerr_errors[] =
 
 	  {7087, "XX004",
 	  {"unrecognized CmdType: %d when perform operations on view.",
-	   "This is an internal error",
-	   "Please contact engineer to support."}},
-
-	  {7088, "XX004",
-	  {"unrecognized CmdType: %d when perform operation on foreign table.",
 	   "This is an internal error",
 	   "Please contact engineer to support."}},
 

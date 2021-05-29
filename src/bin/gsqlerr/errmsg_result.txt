@@ -224,8 +224,26 @@ CAUSE: "This is an internal error"
 ACTION: "Please contact engineer to support."
 
 
+GAUSS-02404: "new row for relation '%s' violates check constraint '%s'"
+SQLSTATE: 23514
+CAUSE: "This is an internal error"
+ACTION: "Please contact engineer to support."
+
+
+GAUSS-02405: "failed to find ExecRowMark for rangetable index %u"
+SQLSTATE: XX000
+CAUSE: "This is an internal error"
+ACTION: "Please contact engineer to support."
+
+
 GAUSS-03514: "xlog flush request %X/%X is not satisfied --- flushed only to %X/%X"
 SQLSTATE: XX000
+CAUSE: "This is an internal error"
+ACTION: "Please contact engineer to support."
+
+
+GAUSS-04520: "LOAD statement is not yet supported."
+SQLSTATE: 0A000
 CAUSE: "This is an internal error"
 ACTION: "Please contact engineer to support."
 
@@ -256,6 +274,12 @@ ACTION: "Please contact engineer to support."
 
 GAUSS-06770: "XuanYuanDB current do not support AIO"
 SQLSTATE: 0A000
+CAUSE: "This is an internal error"
+ACTION: "Please contact engineer to support."
+
+
+GAUSS-07088: "unrecognized CmdType: %d when perform operation on foreign table."
+SQLSTATE: XX004
 CAUSE: "This is an internal error"
 ACTION: "Please contact engineer to support."
 
@@ -5790,7 +5814,7 @@ ACTION: "Please contact engineer to support."
 
 /********************SUMMARY******************/
 Insert ErrorMsg Num: 22
-Delete ErrorMsg Num: 25
+Delete ErrorMsg Num: 29
 Incomplete ErrorMsg Num: 917
 ErrorMsg Num before Make: 7302
-ErrorMsg Num after  Make: 7299
+ErrorMsg Num after  Make: 7295

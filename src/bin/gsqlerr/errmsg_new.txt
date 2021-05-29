@@ -11869,18 +11869,6 @@ CAUSE: "This is an internal error"
 ACTION: "Please contact engineer to support."
 
 
-GAUSS-02404: "new row for relation '%s' violates check constraint '%s'"
-SQLSTATE: 23514
-CAUSE: "This is an internal error"
-ACTION: "Please contact engineer to support."
-
-
-GAUSS-02405: "failed to find ExecRowMark for rangetable index %u"
-SQLSTATE: XX000
-CAUSE: "This is an internal error"
-ACTION: "Please contact engineer to support."
-
-
 GAUSS-02407: "t_xmin is uncommitted in tuple to be updated"
 SQLSTATE: XX000
 CAUSE: "This is an internal error"
@@ -21980,12 +21968,6 @@ ACTION: "Please contact engineer to support."
 
 
 GAUSS-04518: "LISTEN statement is not yet supported."
-SQLSTATE: 0A000
-CAUSE: "This is an internal error"
-ACTION: "Please contact engineer to support."
-
-
-GAUSS-04520: "LOAD statement is not yet supported."
 SQLSTATE: 0A000
 CAUSE: "This is an internal error"
 ACTION: "Please contact engineer to support."
@@ -36692,12 +36674,6 @@ ACTION: "Please contact engineer to support."
 
 
 GAUSS-07087: "unrecognized CmdType: %d when perform operations on view."
-SQLSTATE: XX004
-CAUSE: "This is an internal error"
-ACTION: "Please contact engineer to support."
-
-
-GAUSS-07088: "unrecognized CmdType: %d when perform operation on foreign table."
 SQLSTATE: XX004
 CAUSE: "This is an internal error"
 ACTION: "Please contact engineer to support."
