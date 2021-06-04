@@ -79,11 +79,6 @@ __global__ void nLJ(struct Tuplekv* d_a, struct Tuplekv* d_b, long n_a, long n_b
             (res + i + n_a * x)->dval1 = d_a[i].dval;
             (res + i + n_a * x)->key2 = d_b[x].key;
             (res + i + n_a * x)->dval2 = d_b[x].dval;
-        } else {
-            (res + i + n_a * x)->key1 = -1;
-            (res + i + n_a * x)->dval1 = -1;
-            (res + i + n_a * x)->key2 = -1;
-            (res + i + n_a * x)->dval2 = -1;
         }
     }
 }

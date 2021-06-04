@@ -1,7 +1,7 @@
 # contrib/external_gpu_join/Makefile
 
 MODULE_big = external_gpu_join
-OBJS = external_join.o kernel.o
+OBJS = external_join.o nestLoopJoin.o kernel.o
 PGFILEDESC = "external_gpu_join - working"
 
 #$(info    PGXS VAR is $(MODULE_big))
