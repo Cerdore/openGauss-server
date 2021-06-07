@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-06-04 11:16:29
- * @LastEditTime: 2021-06-04 12:58:48
+ * @LastEditTime: 2021-06-07 11:32:19
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/external_gpu_join/externalJoin.hpp
@@ -84,3 +84,4 @@ void moveResulttoHost(void* arg);
 
 
 /*for hasjJoin*/
+void insetTupleToTable(void *args);

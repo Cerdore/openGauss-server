@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-05-14 03:06:57
- * @LastEditTime: 2021-06-04 14:07:24
+ * @LastEditTime: 2021-06-07 14:25:10
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/GpuJoin/external_join.cpp
@@ -178,7 +178,7 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
                     moveResulttoHost(ejs);
                     break;
                 case hashJ /* constant-expression */:
-
+                    insetTupleToTable(ejs);
                     break;
                 default:
                     break;
@@ -229,7 +229,8 @@ static inline ExternalJoinState* InitExternalJoin(PlanState* ps)
             moveTupletoGPU(ejs);
             break;
         case hashJ:
-
+            ScanTuple(ps, ejs);
+            moveTupletoGPU(ejs);
             break;
         default:
             break;
@@ -378,7 +379,7 @@ static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
 
         /* scan tuple */
 
-        ereport(LOG, (errmsg("enter into putTuple")));
+        ereport(LOG, (errmsg("enter into ScanTuple")));
 
         for (TupleTableSlot* tts = ExecProcNode(node); tts->tts_isempty == false; tts = ExecProcNode(node)) {
             /* copy tuple to buffer */
@@ -393,6 +394,8 @@ static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
     ScanTuple(outerPlanState(node), ejs);
     ScanTuple(innerPlanState(node), ejs);
 }
+
+
 
 static inline uint64_t bytesExtract(uint64_t x, int n)
 {

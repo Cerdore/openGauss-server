@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-06-04 11:15:49
- * @LastEditTime: 2021-06-04 14:22:27
+ * @LastEditTime: 2021-06-07 14:37:51
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/external_gpu_join/nestLoopJoin.cpp
@@ -49,26 +49,16 @@ void moveTupletoGPU(void* arg)
         TupleBuffer* tb = ejs->tbq.pop();
 
         std::size_t size;
-        /* wait for scan completion */
-        // pthread_testcancel();
-        // if (tb == NULL) {
-        //     ::usleep(1);
-        //     continue;
-        // }
+
         size = tb->getContentSize();
 
         ereport(LOG, (errmsg("tuple num is %ld\n size is %lu\n", tb->tupleNum, size)));
 
         cudaError_t cudaStatus = cudaMalloc((void**)&d_tuple[cnt], tb->tupleNum * sizeof(Tuplekv));
-        // if (!cudaStatus) {
-        //     /*call error func*/
-        // }
+
 
         cudaStatus = cudaMemcpy(d_tuple[cnt], tb->getBufferPointer(), size, cudaMemcpyHostToDevice);
 
-        // if (cudaStatus != cudaSuccess) {
-        //     /*call error func*/
-        // }
 
         ejs->d_tuple[cnt] = d_tuple[cnt];
 
@@ -122,3 +112,45 @@ void moveResulttoHost(void* arg)
 
 
 /* --- Hash Join --- */
+void insetTupleToTable(void *args){
+    ereport(LOG, (errmsg("------------------BEGIN: insetTupleToTable")));
+    ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
+    
+
+
+    // KeyValue* device_kvs;
+    // cudaMalloc(&device_kvs, sizeof(KeyValue) * num_kvs);
+    // cudaMemcpy(device_kvs, kvs, sizeof(KeyValue) * num_kvs, cudaMemcpyHostToDevice);
+
+    // Have CUDA calculate the thread block size
+    int mingridsize;
+    int threadblocksize;
+    cudaOccupancyMaxPotentialBlockSize(&mingridsize, &threadblocksize, gpu_hashtable_insert, 0, 0);
+
+    // Create events for GPU timing
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+    // Insert all the keys into the hash table
+    int gridsize = ((uint32_t)num_kvs + threadblocksize - 1) / threadblocksize;
+    gpu_hashtable_insert<<<gridsize, threadblocksize>>>(pHashTable, ejs->d_tuple[0], (uint32_t)ejs->T_size[0]);
+
+    cudaEventRecord(stop);
+
+    cudaEventSynchronize(stop);
+
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    float seconds = milliseconds / 1000.0f;
+    printf("    GPU inserted %d items in %f ms (%f million keys/second)\n", 
+        num_kvs, milliseconds, num_kvs / (double)seconds / 1000000.0f);
+
+    //cudaFree(device_kvs);
+}
+
+void probeTable(void *args){
+    
+}
