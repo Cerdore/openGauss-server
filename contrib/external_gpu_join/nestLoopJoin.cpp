@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-06-04 11:15:49
- * @LastEditTime: 2021-06-07 14:37:51
+ * @LastEditTime: 2021-06-07 15:38:55
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/external_gpu_join/nestLoopJoin.cpp
@@ -152,5 +152,8 @@ void insetTupleToTable(void *args){
 }
 
 void probeTable(void *args){
+    ereport(LOG, (errmsg("------------------BEGIN: insetTupleToTable")));
+    ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
     
+    lookup_hashtable();
 }
