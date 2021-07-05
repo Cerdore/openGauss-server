@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-04-28 10:31:02
- * @LastEditTime: 2021-04-29 08:40:48
+ * @LastEditTime: 2021-07-04 08:18:23
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/src/include/executor/execdesc.h
@@ -25,7 +25,7 @@
 
 #include "nodes/execnodes.h"
 #include "tcop/dest.h"
-#include "gpu/gpu.h"
+//#include "gpu/gpu.h"
 
 #ifdef ENABLE_MOT
 // forward declaration

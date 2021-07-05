@@ -1,37 +1,41 @@
 /*
  * @Author: your name
  * @Date: 2021-06-04 11:15:49
- * @LastEditTime: 2021-06-07 15:38:55
+ * @LastEditTime: 2021-06-08 03:15:19
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/external_gpu_join/nestLoopJoin.cpp
  */
 #include "externalJoin.hpp"
+namespace {
+    #include "cuda.h"
+    #include "cuda_runtime.h"
+}
 
 
 /* --- NestLoopJoin --- */
-void nestLoopJoin(void* arg)
-{
-    ereport(LOG,(errmsg("------------------Begin: nestLoopJoin")));
+// void nestLoopJoin(void* arg)
+// {
+//     ereport(LOG,(errmsg("------------------Begin: nestLoopJoin")));
 
-    ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
+//     ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
     
-    long allResNumSize = ejs->T_size[0] * ejs->T_size[1] * sizeof(Result);
-    ereport(LOG,(errmsg("allResNumSize is %ld\n", allResNumSize)));    
+//     long allResNumSize = ejs->T_size[0] * ejs->T_size[1] * sizeof(Result);
+//     ereport(LOG,(errmsg("allResNumSize is %ld\n", allResNumSize)));    
     
-    ejs->res = (struct Result*)malloc(ejs->T_size[0] * ejs->T_size[1] * sizeof(Result));
-    cudaError_t cudaStatus = cudaMalloc((void**)&ejs->d_res,ejs->T_size[0] * ejs->T_size[1] * sizeof(Result) );
+//     ejs->res = (struct Result*)malloc(ejs->T_size[0] * ejs->T_size[1] * sizeof(Result));
+//     cudaError_t cudaStatus = cudaMalloc((void**)&ejs->d_res,ejs->T_size[0] * ejs->T_size[1] * sizeof(Result) );
     
-   // ejs->d_res = myCudaMalloc<Result>( ejs->T_size[0] * ejs->T_size[1] * sizeof(Result) );
+//    // ejs->d_res = myCudaMalloc<Result>( ejs->T_size[0] * ejs->T_size[1] * sizeof(Result) );
 
 
-    nestLoopJoincu(ejs->d_tuple[0], ejs->d_tuple[1], ejs->T_size[0], ejs->T_size[1], ejs->d_res);
+//     nestLoopJoincu(ejs->d_tuple[0], ejs->d_tuple[1], ejs->T_size[0], ejs->T_size[1], ejs->d_res);
 
-    // cudaStatus = 
-    // cudaDeviceSynchronize();
-    ereport(LOG,(errmsg("------------------End: nestLoopJoin")));
+//     // cudaStatus = 
+//     // cudaDeviceSynchronize();
+//     ereport(LOG,(errmsg("------------------End: nestLoopJoin")));
 
-}
+// }
 
 void moveTupletoGPU(void* arg)
 {
@@ -40,7 +44,8 @@ void moveTupletoGPU(void* arg)
 
     /* if TupleBufferQueue is finalized, TupleBufferQueue->getLength() returns -1 */
     int cnt = 0;
-    struct Tuplekv* d_tuple[2];
+    //cxs
+    struct KeyValue* d_tuple[2];
 
     ereport(LOG, (errmsg("tbq.getlength():  %d\n", ejs->tbq.getLength())));
 
@@ -53,8 +58,8 @@ void moveTupletoGPU(void* arg)
         size = tb->getContentSize();
 
         ereport(LOG, (errmsg("tuple num is %ld\n size is %lu\n", tb->tupleNum, size)));
-
-        cudaError_t cudaStatus = cudaMalloc((void**)&d_tuple[cnt], tb->tupleNum * sizeof(Tuplekv));
+        //cxs 之前是tuplekv
+        cudaError_t cudaStatus = cudaMalloc((void**)&d_tuple[cnt], tb->tupleNum * sizeof(KeyValue));
 
 
         cudaStatus = cudaMemcpy(d_tuple[cnt], tb->getBufferPointer(), size, cudaMemcpyHostToDevice);
@@ -71,39 +76,39 @@ void moveTupletoGPU(void* arg)
     //    return NULL;
 }
 
-void moveResulttoHost(void* arg)
-{
-    ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
-    cudaError_t cudaStatus =
-        cudaMemcpy(ejs->res, ejs->d_res, ejs->T_size[0] * ejs->T_size[1] * sizeof(Result), cudaMemcpyDeviceToHost);
-    // cudaMemcpyToHost(ejs->res, ejs->d_res, ejs->T_size[0] * ejs->T_size[1] * sizeof(Result), cudaMemcpyDeviceToHost);
+// void moveResulttoHost(void* arg)
+// {
+//     ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
+//     cudaError_t cudaStatus =
+//         cudaMemcpy(ejs->res, ejs->d_res, ejs->T_size[0] * ejs->T_size[1] * sizeof(Result), cudaMemcpyDeviceToHost);
+//     // cudaMemcpyToHost(ejs->res, ejs->d_res, ejs->T_size[0] * ejs->T_size[1] * sizeof(Result), cudaMemcpyDeviceToHost);
 
-    // if (cudaStatus != cudaSuccess) {
-    //     /*call error func*/
-    // }
-    long sum = 0;
-    for (long i = 0; i < ejs->T_size[0] * ejs->T_size[1]; i++) {
+//     // if (cudaStatus != cudaSuccess) {
+//     //     /*call error func*/
+//     // }
+//     long sum = 0;
+//     for (long i = 0; i < ejs->T_size[0] * ejs->T_size[1]; i++) {
 
-        if ((ejs->res + i)->key1 == 0 && ((ejs->res + i)->key2 == 0))
-            continue;
+//         if ((ejs->res + i)->key1 == 0 && ((ejs->res + i)->key2 == 0))
+//             continue;
 
-        if ((ejs->res + i)->key1 != -1) {
+//         if ((ejs->res + i)->key1 != -1) {
 
-            // ereport(LOG,(errmsg("Result is   %d %f %d %f\n",(ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res +
-            // i)->key2, (ejs->res + i)->dval2 )));
-            sum++;
-            int k1 = (ejs->res + i)->key1;
-            double d1 = (ejs->res + i)->dval1;
-            int k2 = (ejs->res + i)->key2;
-            double d2 = (ejs->res + i)->dval2;
-            // ejs->prb.put((ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res + i)->key2, (ejs->res + i)->dval2);
-            ejs->prb.put(k1, d1, k2, d2);
-        }
-    }
-    ereport(LOG, (errmsg("count(Result) is   %d\n", sum)));
+//             // ereport(LOG,(errmsg("Result is   %d %f %d %f\n",(ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res +
+//             // i)->key2, (ejs->res + i)->dval2 )));
+//             sum++;
+//             int k1 = (ejs->res + i)->key1;
+//             double d1 = (ejs->res + i)->dval1;
+//             int k2 = (ejs->res + i)->key2;
+//             double d2 = (ejs->res + i)->dval2;
+//             // ejs->prb.put((ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res + i)->key2, (ejs->res + i)->dval2);
+//             ejs->prb.put(k1, d1, k2, d2);
+//         }
+//     }
+//     ereport(LOG, (errmsg("count(Result) is   %d\n", sum)));
 
-    /*put result to host, then put it to queue*/
-}
+//     /*put result to host, then put it to queue*/
+// }
 
 /* --- NestLoopJoin --- */
 
@@ -112,11 +117,11 @@ void moveResulttoHost(void* arg)
 
 
 /* --- Hash Join --- */
-void insetTupleToTable(void *args){
+void insetTupleToTable(void *arg){
     ereport(LOG, (errmsg("------------------BEGIN: insetTupleToTable")));
     ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
     
-
+    ejs->pHashTable = create_hashtable();
 
     // KeyValue* device_kvs;
     // cudaMalloc(&device_kvs, sizeof(KeyValue) * num_kvs);
@@ -124,8 +129,8 @@ void insetTupleToTable(void *args){
 
     // Have CUDA calculate the thread block size
     int mingridsize;
-    int threadblocksize;
-    cudaOccupancyMaxPotentialBlockSize(&mingridsize, &threadblocksize, gpu_hashtable_insert, 0, 0);
+    int threadblocksize = 1024;
+    //cudaOccupancyMaxPotentialBlockSize(&mingridsize, &threadblocksize, gpu_hashtable_insert, 0, 0);
 
     // Create events for GPU timing
     cudaEvent_t start, stop;
@@ -135,9 +140,9 @@ void insetTupleToTable(void *args){
     cudaEventRecord(start);
 
     // Insert all the keys into the hash table
-    int gridsize = ((uint32_t)num_kvs + threadblocksize - 1) / threadblocksize;
-    gpu_hashtable_insert<<<gridsize, threadblocksize>>>(pHashTable, ejs->d_tuple[0], (uint32_t)ejs->T_size[0]);
-
+    int gridsize = ((uint32_t)ejs->T_size[0] + threadblocksize - 1) / threadblocksize;
+    //gpu_hashtable_insert<<<gridsize, threadblocksize>>>(ejs->pHashTable, ejs->d_tuple[0], (uint32_t)ejs->T_size[0]);
+    insertTupleToHashTable(ejs->pHashTable, ejs->d_tuple[0], (uint32_t)ejs->T_size[0], gridsize, threadblocksize);
     cudaEventRecord(stop);
 
     cudaEventSynchronize(stop);
@@ -145,15 +150,57 @@ void insetTupleToTable(void *args){
     float milliseconds = 0;
     cudaEventElapsedTime(&milliseconds, start, stop);
     float seconds = milliseconds / 1000.0f;
-    printf("    GPU inserted %d items in %f ms (%f million keys/second)\n", 
-        num_kvs, milliseconds, num_kvs / (double)seconds / 1000000.0f);
+    // printf("    GPU inserted %d items in %f ms (%f million keys/second)\n", 
+    //     num_kvs, milliseconds, num_kvs / (double)seconds / 1000000.0f);
 
     //cudaFree(device_kvs);
+    ereport(LOG, (errmsg("------------------END: insetTupleToTable")));
 }
 
-void probeTable(void *args){
-    ereport(LOG, (errmsg("------------------BEGIN: insetTupleToTable")));
+void probeTable(void *arg){
+    ereport(LOG, (errmsg("------------------BEGIN: probeTable")));
     ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
     
-    lookup_hashtable();
+    ejs->res = (struct Resultkv*)malloc(ejs->T_size[1] * sizeof(Resultkv));
+    cudaError_t cudaStatus = cudaMalloc((void**)&ejs->d_res,ejs->T_size[1] * sizeof(Resultkv));
+    cudaMemset(ejs->d_res, 0xff, sizeof(KeyValue) * kHashTableCapacity);
+
+
+    int threadblocksize = 1024;
+    // Insert all the keys into the hash table
+    int gridsize = ((uint32_t)ejs->T_size[1] + threadblocksize - 1) / threadblocksize;
+   // gpu_hashtable_lookup <<<gridsize, threadblocksize >>> (ejs->pHashTable, ejs->d_tuple[1], ejs->d_res,(uint32_t)ejs->T_size[1]);
+    probeTableLookup(ejs->pHashTable, ejs->d_tuple[1], ejs->d_res,(uint32_t)ejs->T_size[1], gridsize, threadblocksize);
+    
+    ereport(LOG, (errmsg("------------------END: probeTable")));
+}
+
+void moveResulttoHostforHash(void* arg)
+{
+    ereport(LOG, (errmsg("------------------BEGIN: moveResulttoHostforHash")));
+    ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
+    cudaError_t cudaStatus =
+        cudaMemcpy(ejs->res, ejs->d_res, ejs->T_size[1] * sizeof(Resultkv), cudaMemcpyDeviceToHost);
+        ereport(LOG, (errmsg("T_size(1):  %d  sizeof(Resultkv) %d\n", ejs->T_size[1], sizeof(Resultkv))));
+
+    for (long i = 0; i <ejs->T_size[1]; i++) {
+
+        // if ((ejs->res + i)->key1 ==  kEmpty )
+        //     continue;
+
+        if ((ejs->res + i)->key1 != kEmpty) {
+
+            // ereport(LOG,(errmsg("Result is   %d %f %d %f\n",(ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res +
+            // i)->key2, (ejs->res + i)->dval2 )));
+            uint32_t k1 = (ejs->res + i)->key1;
+            uint32_t d1 = (ejs->res + i)->val1;
+            uint32_t k2 = (ejs->res + i)->key2;
+            uint32_t d2 = (ejs->res + i)->val2;
+            // ejs->prb.put((ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res + i)->key2, (ejs->res + i)->dval2);
+            ejs->prb.put(k1, d1, k2, d2);
+        }
+    }
+
+    ereport(LOG, (errmsg("------------------END: moveResulttoHostforHash")));
+    /*put result to host, then put it to queue*/
 }

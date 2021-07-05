@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-06-04 11:16:29
- * @LastEditTime: 2021-06-08 02:00:18
+ * @LastEditTime: 2021-07-05 02:03:52
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/external_gpu_join/externalJoin.hpp
@@ -39,13 +39,14 @@
 
 #include "kernel.cuh"
 
+#include "bridge.cuh"
 
 /* State for external join */
 /* ExternalExecProcNode() uses PlanState->initPlan field to hold execution state. This is scamped design. */
 /* If initPlan is used by original query process, ExternalExecProcNode() cannot work fine. */
 static constexpr NodeTag T_ExternalJoin = static_cast<NodeTag>(65535);
 enum State { INIT = 0, EXEC, FINI };
-enum exJoinState { nlJ = 0, hashJ };
+enum exJoinState { nlJ = 0, hashJ, ICDE19};
 struct ExternalJoinState {
     NodeTag type;
     State state;
@@ -77,7 +78,7 @@ struct ExternalJoinState {
 
     struct KeyValue* pHashTable;
 
-    long T_size[2];  // size of tuple length
+    long T_num[2];  // size of tuple length
 
     /* size of content in result buffer */
     long psize;
@@ -95,3 +96,5 @@ void insetTupleToTable(void *args);
 
 void probeTable(void *args);
 void moveResulttoHostforHash(void *args);
+
+int invokeICDE(void *args);

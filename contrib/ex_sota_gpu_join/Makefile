@@ -1,8 +1,8 @@
 # contrib/external_gpu_join/Makefile
 
-MODULE_big = external_gpu_join
-OBJS = external_join.o nestLoopJoin.o kernel.o linearprobing.o
-PGFILEDESC = "external_gpu_join - working"
+MODULE_big = ex_sota_gpu_join
+OBJS = external_join.o nestLoopJoin.o   kernel.o linearprobing.o bridge.o partition-primitives.o join-primitives.o hash_join_clustered_probe.o generator_ETHZ.o common.o common-host.o
+PGFILEDESC = "ex_sota_gpu_join - working"
 
 #$(info    PGXS VAR is $(MODULE_big))
 
@@ -14,7 +14,7 @@ PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 else 
 $(info    enter else)
-subdir = contrib/external_gpu_join
+subdir = contrib/ex_sota_gpu_join
 top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
@@ -22,9 +22,10 @@ endif
 
 # CC = g++  -I ../../src/gausskernel -I /usr/local/cuda/include
 
-CXX = g++ -L/usr/local/cuda/lib64 -lcutil -lcudpp -lcuda -lcudart -I/usr/local/cuda/include -I ../../src/gausskernel
+CXX = g++ -L/usr/local/cuda/lib64 -lcutil -lcudpp -lcuda -lcudart -I/usr/local/cuda/include -I ../../src/gausskernel -fPIC
+#CXX = nvcc --compiler-options "-L/usr/local/cuda/lib64 -lcutil -lcudpp -lcuda -lcudart -I/usr/local/cuda/include -I ../../src/gausskernel"
 
-CC += -L/usr/local/cuda/lib64 -lcuda -lcudart
+# CC += -L/usr/local/cuda/lib64 -lcuda -lcudart
 # CXX = g++ -I /usr/local/cuda/include
 # CXXFLAGS = -I /usr/local/cuda/include # -fPIC -std=c++11 -Wno-deprecated-register -Wno-deprecated-declarations -Wall
 # $(info    line27: CXXFLAGS is $(CXXFLAGS))

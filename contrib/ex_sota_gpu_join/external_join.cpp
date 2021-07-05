@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-05-14 03:06:57
- * @LastEditTime: 2021-06-08 03:26:28
+ * @LastEditTime: 2021-07-04 14:44:29
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/GpuJoin/external_join.cpp
@@ -51,8 +51,6 @@ static bool EnableExternalJoin = true;
 /* Holds currently running pthread_t, this is used when a query is cancelled */
 // static pthread_t PreviousThread;
 
-
-
 static ExternalJoinState* makeExternalJoinState(void);
 static void FreeExternalJoinState(ExternalJoinState* ejs);
 static ExternalJoinState* GetExternalJoinState(List* initPlan);
@@ -69,6 +67,8 @@ static TupleTableSlot* ExecExternalJoin(PlanState* ps);
 /* tuple scanner */
 static void ScanTuple(PlanState* node, ExternalJoinState* ejs);
 
+static void ScanTupleCol(PlanState* node, ExternalJoinState* ejs);
+
 static uint64_t bytesExtract(uint64_t x, int n);
 
 /*
@@ -77,7 +77,7 @@ static uint64_t bytesExtract(uint64_t x, int n);
 void _PG_init(void)
 {
     /* Define custom GUC variables. */
-    DefineCustomBoolVariable("external_join.enable",
+    DefineCustomBoolVariable("ex_sota_gpu_join.enable",
         "Selects whether external join is enabled.",
         NULL,
         &EnableExternalJoin,
@@ -88,7 +88,7 @@ void _PG_init(void)
         NULL,
         NULL);
 
-    EmitWarningsOnPlaceholders("external_gpu_join");
+    EmitWarningsOnPlaceholders("ex_sota_gpu_join");
 
     // elog(DEBUG1, "----- external gpu join module loaded -----");
     ereport(LOG, (errmsg("---- external gpu join module loaded")));
@@ -119,8 +119,8 @@ static inline ExternalJoinState* makeExternalJoinState(void)
     ejs->tbq.init();
     ejs->prb.init();
 
-    ejs->T_size[0] = 0;
-    ejs->T_size[1] = 0;
+    ejs->T_num[0] = 0;
+    ejs->T_num[1] = 0;
     //   ejs->drb.init();
     // ejs->prb = ejs->drb.getCurrentResultBuffer();
     // ejs->poffset = ResultBuffer::BUFSIZE;
@@ -149,8 +149,6 @@ static inline ExternalJoinState* SetExternalJoinState(List** initPlan, ExternalJ
     return ejs;
 }
 
-
-
 /* main */
 TupleTableSlot* ExternalExecProcNode(PlanState* ps)
 {
@@ -171,17 +169,19 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
             elog(DEBUG5, "BEGIN: Init");
             ereport(LOG, (errmsg("------------------BEGIN: Init Loop")));
             ejs = InitExternalJoin(ps);
-                
+
             switch (ejs->joinState) {
                 case nlJ:
                     // nestLoopJoin(ejs);
                     // moveResulttoHost(ejs);
                     break;
-                case hashJ /* constant-expression */:
+                case hashJ:
                     insetTupleToTable(ejs);
                     probeTable(ejs);
                     moveResulttoHostforHash(ejs);
                     break;
+//                case ICDE19:
+
                 default:
                     break;
             }
@@ -205,7 +205,7 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
             ereport(LOG, (errmsg("------------------END: Begin")));
 
             EndExternalJoin(ps);
-            //EnableExternalJoin = false;  // cxs module time out
+            // EnableExternalJoin = false;  // cxs module time out
             ereport(LOG, (errmsg("------------------END: End")));
             break;
         } else {
@@ -220,13 +220,13 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
 
 static inline ExternalJoinState* InitExternalJoin(PlanState* ps)
 {
-    ereport(LOG, (errmsg("------------------BEGIN: IniInitExternalJoin")));
+    ereport(LOG, (errmsg("------------------BEGIN: InitExternalJoin")));
     cudaError_t cudaStatus = cudaSetDevice(0);
     ExternalJoinState* ejs = SetExternalJoinState(&ps->initPlan, makeExternalJoinState());
     ejs->joinState = hashJ;
-    
+
     switch (ejs->joinState) {
-        case nlJ/* constant-expression */:
+        case nlJ /* constant-expression */:
             // ScanTuple(ps, ejs);
             // moveTupletoGPU(ejs);
             break;
@@ -234,10 +234,12 @@ static inline ExternalJoinState* InitExternalJoin(PlanState* ps)
             ScanTuple(ps, ejs);
             moveTupletoGPU(ejs);
             break;
+        case ICDE19:
+            ScanTupleCol(ps, ejs);
+            invokeICDE(ejs);
         default:
             break;
     }
-    
 
     ExecAssignExprContext(ps->state, ps);
     /* init result tuple */
@@ -253,7 +255,7 @@ static inline ExternalJoinState* InitExternalJoin(PlanState* ps)
 
 static inline void EndExternalJoin(PlanState* ps)
 {
-          ereport(LOG, (errmsg("------------------BEGIN: EndExternalJoin")));
+    ereport(LOG, (errmsg("------------------BEGIN: EndExternalJoin")));
 
     ExternalJoinState* ejs = GetExternalJoinState(ps->initPlan);
     ejs->tbq.fini();
@@ -265,9 +267,9 @@ static inline void EndExternalJoin(PlanState* ps)
     cudaFree(ejs->d_tuple[0]);
     cudaFree(ejs->d_tuple[1]);
     cudaFree(ejs->d_res);
-    
+
     free(ejs->res);
-      ereport(LOG, (errmsg("------------------END: EndExternalJoin")));
+    ereport(LOG, (errmsg("------------------END: EndExternalJoin")));
 }
 
 /* prev 应该保存的是上次最后的位置
@@ -287,7 +289,7 @@ static inline TupleTableSlot* ExecExternalJoin(PlanState* ps)
 
     if (ejs->prb.index <= 0)
         return NULL;
-    //cxs
+    // cxs
     struct Resultkv* res = ejs->prb.get();
 
     // ereport(LOG,(errmsg("ExecExternalJoin Result is   %d %f %d %f\n",res->key1, res->dval1, res->key2, res->dval2
@@ -312,7 +314,7 @@ static inline TupleTableSlot* ExecExternalJoin(PlanState* ps)
         //  ("Type of Col:  %d \n",td->attrs[col]->atttypid )));
 
         switch (td->attrs[col]->atttypid) {
-           //cxs case INT4OID:  // cxs add
+                // cxs case INT4OID:  // cxs add
             case INT8OID:
             case FLOAT8OID:
                 // ejs->poffset = GetAlignedOffset(ejs->poffset, sizeof(double));
@@ -371,7 +373,35 @@ static inline TupleTableSlot* ExecExternalJoin(PlanState* ps)
     return ExecStoreVirtualTuple(tts);
 }
 
-static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
+// static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
+// {
+//     if (node == NULL)
+//         return;
+//     if (node->type >= T_ScanState &&
+//         node->type <= T_ForeignScanState) {  // scandate ranges T_ScanState from T_ForeignScanState
+//         TupleBuffer* tb = TupleBuffer::constructor();
+//         // ColBuffer* tb = ColBuffer::constructor();
+
+//         elog(DEBUG5, "----- ScanNode [%p] -----", node);
+//         elog_node_display(LOG, "ScanNode->plan", node->plan, true);
+
+//         ereport(LOG, (errmsg("enter into ScanTuple")));
+
+//         for (TupleTableSlot* tts = ExecProcNode(node); tts->tts_isempty == false; tts = ExecProcNode(node)) {
+//             /* copy tuple to buffer */
+//             tb->putTuple(tts);
+//             ResetExprContext(node->ps_ExprContext);
+//         }
+
+//         /* scan is complete for this ScanNode, put buffer into queue */
+//         ejs->tbq.push(tb);
+//     }
+//     /* look for other ScanNode */
+//     ScanTuple(outerPlanState(node), ejs);
+//     ScanTuple(innerPlanState(node), ejs);
+// }
+
+static inline void ScanTupleCol(PlanState* node, ExternalJoinState* ejs)
 {
     if (node == NULL)
         return;
@@ -383,13 +413,11 @@ static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
         elog(DEBUG5, "----- ScanNode [%p] -----", node);
         elog_node_display(LOG, "ScanNode->plan", node->plan, true);
 
-        /* scan tuple */
-
         ereport(LOG, (errmsg("enter into ScanTuple")));
 
         for (TupleTableSlot* tts = ExecProcNode(node); tts->tts_isempty == false; tts = ExecProcNode(node)) {
             /* copy tuple to buffer */
-            tb->putTuple(tts);
+            tb->putTupleCol(tts);
             ResetExprContext(node->ps_ExprContext);
         }
 
@@ -400,8 +428,6 @@ static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
     ScanTuple(outerPlanState(node), ejs);
     ScanTuple(innerPlanState(node), ejs);
 }
-
-
 
 static inline uint64_t bytesExtract(uint64_t x, int n)
 {
