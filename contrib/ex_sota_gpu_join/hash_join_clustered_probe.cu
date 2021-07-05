@@ -38,7 +38,12 @@ SOFTWARE.*/
 #include <omp.h>
 #include <immintrin.h>
 
+//#include "utils/elog.h"   //cxs
 
+namespace {
+    #include "utils/elog.h"
+// #include "postgres.h"   //cxs
+}
 #define PROBE_BUCKETS 256
 #define LOCAL_BUCKETS 2048 
 
@@ -1136,6 +1141,14 @@ unsigned int outOfGPU_Join1_payload (int* R, int* Pr, size_t RelsNum, int* S, in
     std::cout << "Partition Throughput " << (2 * (RelsNum + SelsNum)*sizeof(int))/(t3-t1)/1000/1000 << std::endl;
     std::cout << "Joins Throughput " << (2 * (RelsNum + SelsNum)*sizeof(int))/(t2-t3)/1000/1000 << std::endl;
     std::cout << "Total Throughput  " << (2 * (RelsNum + SelsNum)*sizeof(int))/(t2-t1)/1000/1000 << std::endl;
+
+    //cxs
+    ereport(LOG,(errmsg("With materialization\n")));
+    ereport(LOG,(errmsg("Partition Throughput :  %d \n",(2 * (RelsNum + SelsNum)*sizeof(int))/(t3-t1)/1000/1000)));
+    ereport(LOG,(errmsg("Joins Throughput:  %d \n",(2 * (RelsNum + SelsNum)*sizeof(int))/(t2-t3)/1000/1000 )));
+    ereport(LOG,(errmsg("Total Throughput:  %d \n",(2 * (RelsNum + SelsNum)*sizeof(int))/(t2-t1)/1000/1000 )));      
+    
+
 
     CHK_ERROR(cudaDeviceSynchronize());
 

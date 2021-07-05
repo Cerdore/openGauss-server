@@ -47,4 +47,4 @@ static joinAlg algs[]{
 		//		{"HJ", hashIndexJoin}
 };
 
-void usage_exit(int op);
+//void usage_exit(int op);

@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-05-14 03:06:57
- * @LastEditTime: 2021-07-04 14:44:29
+ * @LastEditTime: 2021-07-05 02:59:39
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/GpuJoin/external_join.cpp
@@ -231,7 +231,7 @@ static inline ExternalJoinState* InitExternalJoin(PlanState* ps)
             // moveTupletoGPU(ejs);
             break;
         case hashJ:
-            ScanTuple(ps, ejs);
+            //ScanTuple(ps, ejs);
             moveTupletoGPU(ejs);
             break;
         case ICDE19:
@@ -373,33 +373,9 @@ static inline TupleTableSlot* ExecExternalJoin(PlanState* ps)
     return ExecStoreVirtualTuple(tts);
 }
 
-// static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
-// {
-//     if (node == NULL)
-//         return;
-//     if (node->type >= T_ScanState &&
-//         node->type <= T_ForeignScanState) {  // scandate ranges T_ScanState from T_ForeignScanState
-//         TupleBuffer* tb = TupleBuffer::constructor();
-//         // ColBuffer* tb = ColBuffer::constructor();
-
-//         elog(DEBUG5, "----- ScanNode [%p] -----", node);
-//         elog_node_display(LOG, "ScanNode->plan", node->plan, true);
-
-//         ereport(LOG, (errmsg("enter into ScanTuple")));
-
-//         for (TupleTableSlot* tts = ExecProcNode(node); tts->tts_isempty == false; tts = ExecProcNode(node)) {
-//             /* copy tuple to buffer */
-//             tb->putTuple(tts);
-//             ResetExprContext(node->ps_ExprContext);
-//         }
-
-//         /* scan is complete for this ScanNode, put buffer into queue */
-//         ejs->tbq.push(tb);
-//     }
-//     /* look for other ScanNode */
-//     ScanTuple(outerPlanState(node), ejs);
-//     ScanTuple(innerPlanState(node), ejs);
-// }
+static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
+{
+}
 
 static inline void ScanTupleCol(PlanState* node, ExternalJoinState* ejs)
 {

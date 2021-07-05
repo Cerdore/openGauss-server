@@ -1,12 +1,13 @@
 /*
  * @Author: your name
  * @Date: 2021-06-04 11:15:49
- * @LastEditTime: 2021-07-05 02:25:58
+ * @LastEditTime: 2021-07-05 05:45:34
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/external_gpu_join/nestLoopJoin.cpp
  */
 #include "externalJoin.hpp"
+
 namespace {
     #include "cuda.h"
     #include "cuda_runtime.h"
@@ -41,42 +42,6 @@ void moveTupletoGPU(void* arg)
 {
 
 }
-
-// void moveResulttoHost(void* arg)
-// {
-//     ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
-//     cudaError_t cudaStatus =
-//         cudaMemcpy(ejs->res, ejs->d_res, ejs->T_num[0] * ejs->T_num[1] * sizeof(Result), cudaMemcpyDeviceToHost);
-//     // cudaMemcpyToHost(ejs->res, ejs->d_res, ejs->T_num[0] * ejs->T_num[1] * sizeof(Result), cudaMemcpyDeviceToHost);
-
-//     // if (cudaStatus != cudaSuccess) {
-//     //     /*call error func*/
-//     // }
-//     long sum = 0;
-//     for (long i = 0; i < ejs->T_num[0] * ejs->T_num[1]; i++) {
-
-//         if ((ejs->res + i)->key1 == 0 && ((ejs->res + i)->key2 == 0))
-//             continue;
-
-//         if ((ejs->res + i)->key1 != -1) {
-
-//             // ereport(LOG,(errmsg("Result is   %d %f %d %f\n",(ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res +
-//             // i)->key2, (ejs->res + i)->dval2 )));
-//             sum++;
-//             int k1 = (ejs->res + i)->key1;
-//             double d1 = (ejs->res + i)->dval1;
-//             int k2 = (ejs->res + i)->key2;
-//             double d2 = (ejs->res + i)->dval2;
-//             // ejs->prb.put((ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res + i)->key2, (ejs->res + i)->dval2);
-//             ejs->prb.put(k1, d1, k2, d2);
-//         }
-//     }
-//     ereport(LOG, (errmsg("count(Result) is   %d\n", sum)));
-
-//     /*put result to host, then put it to queue*/
-// }
-
-/* --- NestLoopJoin --- */
 
 
 
@@ -302,8 +267,10 @@ int invokeICDE(void* arg)
 		CHK_ERROR(cudaMallocManaged((void **)&joinArgs.S, S_bytes));
 		CHK_ERROR(cudaMallocManaged((void **)&joinArgs.R, R_bytes));
 #elif defined(MEM_HOST)
-		CHK_ERROR(cudaHostAlloc((void **)&joinArgs.S, S_bytes, cudaHostAllocMapped)); //cxs 主机内存到设备内存的映射，设备端不需要额外开辟内存
-		CHK_ERROR(cudaHostAlloc((void **)&joinArgs.R, R_bytes, cudaHostAllocMapped));
+		//CHK_ERROR(cudaHostAlloc((void **)&joinArgs.S, S_bytes, cudaHostAllocMapped)); //cxs 主机内存到设备内存的映射，设备端不需要额外开辟内存
+		//CHK_ERROR(cudaHostAlloc((void **)&joinArgs.R, R_bytes, cudaHostAllocMapped));
+        TupleBuffer* tbl = ejs->tbq.pop();
+        TupleBuffer* tbr = ejs->tbq.pop();
 #endif
 
 		if (input.fileInput)
@@ -334,8 +301,9 @@ int invokeICDE(void* arg)
 
 			if (Q_r == NULL)
 			{
-				create_relation_unique(joinArgs.R_filename, joinArgs.R, joinArgs.R_els, joinArgs.R_els); //cxs step into there to create relation
-			}
+				//create_relation_unique(joinArgs.R_filename, joinArgs.R, joinArgs.R_els, joinArgs.R_els); //cxs step into there to create relation
+                joinArgs.R = tbr->getBufferPointer(0);
+            }
 			else
 			{
 				create_relation_unique(joinArgs.R_filename, Q_r, Q_els_r, Q_els_r);
@@ -358,9 +326,10 @@ int invokeICDE(void* arg)
 					/* S is uniform foreign key */
 					printf("Creating relation S with %lu tuples (%d MB) using unique keys : ", joinArgs.S_els,
 								 S_bytes / 1024 / 1024);
-					//cxs fflush(stdout);																	//cxs step into there
+					fflush(stdout);																	//cxs step into there
 					create_relation_unique(joinArgs.S_filename, joinArgs.S, joinArgs.S_els, joinArgs.R_els);
-				}
+                    joinArgs.S = tbl->getBufferPointer(0);
+                }
 			}
 			else
 			{
@@ -435,8 +404,8 @@ int invokeICDE(void* arg)
 
 			cudaDeviceReset();
 #if defined(MEM_HOST)
-			cudaFreeHost(joinArgs.S);
-			cudaFreeHost(joinArgs.R);
+//cxs			cudaFreeHost(joinArgs.S);
+//cxs			cudaFreeHost(joinArgs.R);
 #else
 			cudaFree(joinArgs.S);
 			cudaFree(joinArgs.R);
@@ -446,7 +415,10 @@ int invokeICDE(void* arg)
 
 	break;
 	default:
-		usage_exit(0);
+		
+		printf(
+				"./benchmark -b <id=1(select), 2(reduce), 3(memcpy), 4(streams), 5(tpch), 6(layouts), 7(joins), 8(join on CPU), 9(sort)>\n");
+	    exit(1);
 		break;
 	}
 }
