@@ -26,6 +26,8 @@ SOFTWARE.*/
 
 
 #include "join-primitives.cuh"
+#include "cuda.h"   //cxs
+#include "cuda_runtime.h"
 
 __global__ void init_payload (int* R, int n) {
     for (int i = threadIdx.x + blockIdx.x*blockDim.x; i < n; i += blockDim.x*gridDim.x)

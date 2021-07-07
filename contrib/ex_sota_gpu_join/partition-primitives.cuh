@@ -35,6 +35,10 @@ SOFTWARE.*/
 #include "common.h"
 #include "common-host.h"
 
+#include "cuda.h"   //cxs
+#include "cuda_runtime.h"
+
+
 #define OMP_PARALLELISM1 16
 #define OMP_PARALLELISM2 16 
 #define OMP_MEMORY_STEP 4096

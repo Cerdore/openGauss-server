@@ -12,7 +12,8 @@ All credit to the original author: Cagri Balkesen <cagri.balkesen@inf.ethz.ch>
 #include <ctime>
 #include <cstring>
 #include <cmath>
-
+#include "cuda.h"   //cxs
+#include "cuda_runtime.h"
 #define RAND_RANGE(N) ((double)rand() / ((double)RAND_MAX + 1) * (N))
 #define RAND_RANGE48(N,STATE) ((double)nrand48(STATE)/((double)RAND_MAX+1)*(N))
 

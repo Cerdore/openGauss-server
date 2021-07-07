@@ -6,6 +6,7 @@ All credit to the original author: Cagri Balkesen <cagri.balkesen@inf.ethz.ch>
 #ifndef GENERATOR_ETHZ_CUH_
 #define GENERATOR_ETHZ_CUH_
 
+#include "common.h"
 #include <cstdint>	/*uint64_t*/
 
 void seed_generator(unsigned int seed);

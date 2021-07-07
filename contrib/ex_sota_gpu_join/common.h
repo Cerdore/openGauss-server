@@ -26,7 +26,6 @@ SOFTWARE.*/
 #include<limits.h>
 #include <type_traits>
 
-
 /* Constants */
 #define WARP_SZ 32
 #define NSTREAM 16//32

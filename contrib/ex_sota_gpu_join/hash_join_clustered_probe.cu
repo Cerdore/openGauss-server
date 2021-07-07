@@ -40,10 +40,16 @@ SOFTWARE.*/
 
 //#include "utils/elog.h"   //cxs
 
-namespace {
-    #include "utils/elog.h"
-// #include "postgres.h"   //cxs
-}
+// namespace {
+//     #include "utils/elog.h"
+// // #include "postgres.h"   //cxs
+// }
+#include "cuda.h"   //cxs
+#include "cuda_runtime.h"
+
+#include <fstream>
+
+
 #define PROBE_BUCKETS 256
 #define LOCAL_BUCKETS 2048 
 
@@ -1142,11 +1148,18 @@ unsigned int outOfGPU_Join1_payload (int* R, int* Pr, size_t RelsNum, int* S, in
     std::cout << "Joins Throughput " << (2 * (RelsNum + SelsNum)*sizeof(int))/(t2-t3)/1000/1000 << std::endl;
     std::cout << "Total Throughput  " << (2 * (RelsNum + SelsNum)*sizeof(int))/(t2-t1)/1000/1000 << std::endl;
 
+    std::ofstream outfile("timeRecord.txt");
+    outfile<< "With materialization" << std::endl;
+    outfile<<  "Partition Throughput " << (2 * (RelsNum + SelsNum)*sizeof(int))/(t3-t1)/1000/1000 << std::endl;
+    outfile<<  "Joins Throughput " << (2 * (RelsNum + SelsNum)*sizeof(int))/(t2-t3)/1000/1000 << std::endl;
+    outfile<<  "Total Throughput  " << (2 * (RelsNum + SelsNum)*sizeof(int))/(t2-t1)/1000/1000 << std::endl;
+    
+
     //cxs
-    ereport(LOG,(errmsg("With materialization\n")));
-    ereport(LOG,(errmsg("Partition Throughput :  %d \n",(2 * (RelsNum + SelsNum)*sizeof(int))/(t3-t1)/1000/1000)));
-    ereport(LOG,(errmsg("Joins Throughput:  %d \n",(2 * (RelsNum + SelsNum)*sizeof(int))/(t2-t3)/1000/1000 )));
-    ereport(LOG,(errmsg("Total Throughput:  %d \n",(2 * (RelsNum + SelsNum)*sizeof(int))/(t2-t1)/1000/1000 )));      
+    // ereport(LOG,(errmsg("With materialization\n")));
+    // ereport(LOG,(errmsg("Partition Throughput :  %d \n",(2 * (RelsNum + SelsNum)*sizeof(int))/(t3-t1)/1000/1000)));
+    // ereport(LOG,(errmsg("Joins Throughput:  %d \n",(2 * (RelsNum + SelsNum)*sizeof(int))/(t2-t3)/1000/1000 )));
+    // ereport(LOG,(errmsg("Total Throughput:  %d \n",(2 * (RelsNum + SelsNum)*sizeof(int))/(t2-t1)/1000/1000 )));      
     
 
 

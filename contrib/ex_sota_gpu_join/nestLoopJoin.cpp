@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-06-04 11:15:49
- * @LastEditTime: 2021-07-05 05:45:34
+ * @LastEditTime: 2021-07-05 11:25:27
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/external_gpu_join/nestLoopJoin.cpp
@@ -302,7 +302,7 @@ int invokeICDE(void* arg)
 			if (Q_r == NULL)
 			{
 				//create_relation_unique(joinArgs.R_filename, joinArgs.R, joinArgs.R_els, joinArgs.R_els); //cxs step into there to create relation
-                joinArgs.R = tbr->getBufferPointer(0);
+                joinArgs.R = (int *)tbr->getBufferPointer(0);
             }
 			else
 			{
@@ -328,7 +328,7 @@ int invokeICDE(void* arg)
 								 S_bytes / 1024 / 1024);
 					fflush(stdout);																	//cxs step into there
 					create_relation_unique(joinArgs.S_filename, joinArgs.S, joinArgs.S_els, joinArgs.R_els);
-                    joinArgs.S = tbl->getBufferPointer(0);
+                    joinArgs.S = (int *)tbl->getBufferPointer(0);
                 }
 			}
 			else

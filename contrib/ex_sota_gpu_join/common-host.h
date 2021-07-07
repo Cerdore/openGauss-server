@@ -1,3 +1,11 @@
+/*
+ * @Author: your name
+ * @Date: 2021-07-05 12:14:00
+ * @LastEditTime: 2021-07-05 12:14:08
+ * @LastEditors: Please set LastEditors
+ * @Description: In User Settings Edit
+ * @FilePath: /openGauss-server/contrib/ex_sota_gpu_join/common-host.h
+ */
 /*Copyright (c) 2018 Data Intensive Applications and Systems Laboratory (DIAS)
                    Ecole Polytechnique Federale de Lausanne
 
@@ -25,6 +33,7 @@ SOFTWARE.*/
 #include <chrono>
 #include <string>
 #include <iostream>
+
 
 #define PAGESIZE 65568 //16384 * sizeof(int) + 32  //
 //#define PAGESIZE 16416 //16384 - 32

@@ -25,7 +25,8 @@ SOFTWARE.*/
 #include <stdlib.h>
 #include <sys/time.h>           /* gettimeofday */
 #include <math.h>
-
+#include "cuda.h"   //cxs
+#include "cuda_runtime.h"
 __constant__ unsigned int valuesToProcess;
 __device__ maxSize_type sum_dev;
 

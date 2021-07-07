@@ -21,6 +21,9 @@ SOFTWARE.*/
 
 #include "bridge.cuh"
 
+#include "cuda.h"   //cxs
+#include "cuda_runtime.h"
+
 
 void print_timing_join(args *input, timingInfo *time, joinAlg *alg);
 void parseInputArgs(int argc, char **argv, inputArgs *input);

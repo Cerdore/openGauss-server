@@ -20,6 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.*/
 
 #include "partition-primitives.cuh"
+#include "cuda.h"   //cxs
+#include "cuda_runtime.h"
 
 #define LOG_BATCH 8
 #define PARTS_CAPACITY 16
