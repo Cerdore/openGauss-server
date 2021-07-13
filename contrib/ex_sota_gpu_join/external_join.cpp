@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-05-14 03:06:57
- * @LastEditTime: 2021-07-05 02:59:39
+ * @LastEditTime: 2021-07-08 12:48:59
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/GpuJoin/external_join.cpp
@@ -176,12 +176,15 @@ TupleTableSlot* ExternalExecProcNode(PlanState* ps)
                     // moveResulttoHost(ejs);
                     break;
                 case hashJ:
+                    moveTupletoGPU(ejs);
                     insetTupleToTable(ejs);
                     probeTable(ejs);
                     moveResulttoHostforHash(ejs);
                     break;
-//                case ICDE19:
-
+                case ICDE19:
+                    ScanTupleCol(ps, ejs);
+                    invokeICDE(ejs);
+                    //moveResulttoHostforICDE(ejs);
                 default:
                     break;
             }
@@ -223,23 +226,24 @@ static inline ExternalJoinState* InitExternalJoin(PlanState* ps)
     ereport(LOG, (errmsg("------------------BEGIN: InitExternalJoin")));
     cudaError_t cudaStatus = cudaSetDevice(0);
     ExternalJoinState* ejs = SetExternalJoinState(&ps->initPlan, makeExternalJoinState());
-    ejs->joinState = hashJ;
+    ejs->joinState = ICDE19;
 
-    switch (ejs->joinState) {
-        case nlJ /* constant-expression */:
-            // ScanTuple(ps, ejs);
-            // moveTupletoGPU(ejs);
-            break;
-        case hashJ:
-            //ScanTuple(ps, ejs);
-            moveTupletoGPU(ejs);
-            break;
-        case ICDE19:
-            ScanTupleCol(ps, ejs);
-            invokeICDE(ejs);
-        default:
-            break;
-    }
+    // switch (ejs->joinState) {
+    //     case nlJ /* constant-expression */:
+    //         // ScanTuple(ps, ejs);
+    //         // moveTupletoGPU(ejs);
+    //         break;
+    //     case hashJ:
+    //         //ScanTuple(ps, ejs);
+    //         moveTupletoGPU(ejs);
+    //         break;
+    //     case ICDE19:
+    //         ScanTupleCol(ps, ejs);
+    //         invokeICDE(ejs);
+    //         break;
+    //     default:
+    //         break;
+    // }
 
     ExecAssignExprContext(ps->state, ps);
     /* init result tuple */
@@ -267,9 +271,10 @@ static inline void EndExternalJoin(PlanState* ps)
     cudaFree(ejs->d_tuple[0]);
     cudaFree(ejs->d_tuple[1]);
     cudaFree(ejs->d_res);
-
+    
     free(ejs->res);
-    ereport(LOG, (errmsg("------------------END: EndExternalJoin")));
+    
+    ereport(LOG, (errmsg("------------------END: EndExternalJoin trueEnd")));
 }
 
 /* prev 应该保存的是上次最后的位置
@@ -370,7 +375,8 @@ static inline TupleTableSlot* ExecExternalJoin(PlanState* ps)
     /* set null flags to false */
     ::bzero(static_cast<void*>(tts->tts_isnull), sizeof(bool) * td->natts);
 
-    return ExecStoreVirtualTuple(tts);
+   return ExecStoreVirtualTuple(tts);
+    return NULL;
 }
 
 static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
@@ -379,6 +385,7 @@ static inline void ScanTuple(PlanState* node, ExternalJoinState* ejs)
 
 static inline void ScanTupleCol(PlanState* node, ExternalJoinState* ejs)
 {
+    ereport(LOG, (errmsg("------------------BEGIN: ScanTupleCol")));
     if (node == NULL)
         return;
     if (node->type >= T_ScanState &&
@@ -386,8 +393,8 @@ static inline void ScanTupleCol(PlanState* node, ExternalJoinState* ejs)
         TupleBuffer* tb = TupleBuffer::constructor();
         // ColBuffer* tb = ColBuffer::constructor();
 
-        elog(DEBUG5, "----- ScanNode [%p] -----", node);
-        elog_node_display(LOG, "ScanNode->plan", node->plan, true);
+        //elog(DEBUG5, "----- ScanNode [%p] -----", node);
+        //elog_node_display(LOG, "ScanNode->plan", node->plan, true);
 
         ereport(LOG, (errmsg("enter into ScanTuple")));
 
@@ -398,11 +405,14 @@ static inline void ScanTupleCol(PlanState* node, ExternalJoinState* ejs)
         }
 
         /* scan is complete for this ScanNode, put buffer into queue */
+        //ereport(LOG, (errmsg("------------------BEGIN: TupleNum: %d ", tb->tupleNum)));
+        ereport(LOG, (errmsg("------------------BEGIN: TupleBuffer content_size: %d ", tb->getContentSize(0))));
+        ejs->T_num[ejs->tbq.getLength()] = tb->tupleNum;
         ejs->tbq.push(tb);
     }
     /* look for other ScanNode */
-    ScanTuple(outerPlanState(node), ejs);
-    ScanTuple(innerPlanState(node), ejs);
+    ScanTupleCol(outerPlanState(node), ejs);
+    ScanTupleCol(innerPlanState(node), ejs);
 }
 
 static inline uint64_t bytesExtract(uint64_t x, int n)

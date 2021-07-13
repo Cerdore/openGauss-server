@@ -98,3 +98,4 @@ void probeTable(void *args);
 void moveResulttoHostforHash(void *args);
 
 int invokeICDE(void *args);
+void moveResulttoHostforICDE(void *args);

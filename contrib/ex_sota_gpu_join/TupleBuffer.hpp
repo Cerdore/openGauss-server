@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-05-14 03:08:11
- * @LastEditTime: 2021-07-05 02:06:07
+ * @LastEditTime: 2021-07-09 01:59:09
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/GpuJoin/TupleBuffer.cpp
@@ -86,8 +86,13 @@ public:
 
         std::size_t tuple_size = TupleBuffer::getTupleSize(tts);
 
-        bool nulls[ATTR_NUM];
-        Datum values[ATTR_NUM];
+        //bool nulls[ATTR_NUM];
+        //Datum values[ATTR_NUM];
+        
+        //ereport(LOG, (errmsg("putTupleCol: sizeOf Datum :  %d", sizeof(Datum))));
+
+        Datum* values = (Datum *)palloc(ATTR_NUM * sizeof(Datum));
+        bool* nulls = (bool *)palloc(ATTR_NUM * sizeof(bool));        
         HeapTuple tuple = static_cast<HeapTuple>(tts->tts_tuple);
         TupleDesc desc = tts->tts_tupleDescriptor;
         
@@ -100,24 +105,12 @@ public:
                 this->extendBuffer(i);
         }
 
-        /* add attr, ref to gpu/tableScan.c
-        这是一个buffer,所以应该是对每个tuple一个这个属性？
-        并不需要，因为一个buffer中的tuple的属性是一样的
-        ，但是size都一样吗！！？
-        有了类型不就应该有size了吗...*/
-        // if (this->tupleNum = 0) {
-        //     //    this->totalAttr = get_relnatts(tts->tts_tuple->t_tableOid);
-        //     int natts = tts->tts_tupleDescriptor->natts;
-        //     this->totalAttr = natts;
-
-        //     this->attrSize = (int*)palloc(sizeof(int) * natts);
-        //     this->attrType = (int*)palloc(sizeof(int) * natts);
-        //     this->attrIndex = (int*)palloc(sizeof(int) * natts);
-        // }
-        // this->attrType[this->tupleNum] = this->tupleNum++;
-
         for (int i = 0; i < ATTR_NUM; i++) {
-            std::memcpy(this->getWritePointer(i), (void *)values[i], 4); //may be the 4 byte
+            // if(i == 0)
+            //     ereport(LOG, (errmsg("putTupleCol: values[%d] :  %d", i, DatumGetInt32(*(values+i)))));
+
+            std::memcpy(this->getWritePointer(i), (void*)(values+i), 4); //may be the 4 byte
+            this->content_size[i]+=4;
         }
         this->tupleNum++;
     }
@@ -125,38 +118,6 @@ public:
     void putTuple(TupleTableSlot* tts)
     {
 
-        // std::size_t tuple_size = TupleBuffer::getTupleSize(tts);
-        // // tuple size is 16 ---- ereport(LOG,(errmsg("Tuple size is %lu\n", tuple_size)));
-
-        // for (int i = 0; i < ATTR_NUM; i++) {
-        //     while (this->checkOverflow(tuple_size, i))
-        //         this->extendBuffer(i);
-        // }
-
-        // /*把数据全拷过去，没考虑解析*/
-        // std::memcpy(this->getWritePointer(), TupleBuffer::getTupleDataPointer(tts), tuple_size);
-        // this->content_size += tuple_size;
-
-        // /* add attr, ref to gpu/tableScan.c
-        // 这是一个buffer,所以应该是对每个tuple一个这个属性？
-        // 并不需要，因为一个buffer中的tuple的属性是一样的
-        // ，但是size都一样吗！！？
-        // 有了类型不就应该有size了吗...*/
-        // // if (this->tupleNum = 0) {
-        // //     //    this->totalAttr = get_relnatts(tts->tts_tuple->t_tableOid);
-        // //     int natts = tts->tts_tupleDescriptor->natts;
-        // //     this->totalAttr = natts;
-
-        // //     this->attrSize = (int*)palloc(sizeof(int) * natts);
-        // //     this->attrType = (int*)palloc(sizeof(int) * natts);
-        // //     this->attrIndex = (int*)palloc(sizeof(int) * natts);
-        // // }
-        // // this->attrType[this->tupleNum] = this->tupleNum++;
-
-        // for (int i = 0; i < ATTR_NUM; i++) {
-        //     std::memcpy(this->getWritePointer(i), (void *)values[i], tuple_size); //tuple_size还没改
-        // }
-        // this->tupleNum++;
     }
 
     void* getWritePointer(int index) const

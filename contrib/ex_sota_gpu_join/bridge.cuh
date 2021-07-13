@@ -6,13 +6,14 @@
 #include "generator_ETHZ.cuh"
 #include "common.h"
 #include "common-host.h"
+#include "TupleResult.hpp"
 
-unsigned int hashJoinClusteredProbe(args *inputAttrs, timingInfo *time);
+unsigned int hashJoinClusteredProbe(args *inputAttrs, timingInfo *time, Resultkv * &res);
 
 typedef struct joinAlg
 {
 	char name[4];
-	unsigned int (*joinAlg)(args *, timingInfo *);
+	unsigned int (*joinAlg)(args *, timingInfo *, Resultkv * &);
 } joinAlg;
 
 typedef struct inputArgs
@@ -20,7 +21,7 @@ typedef struct inputArgs
 	short option = 0;
 	joinAlg alg
 #ifndef __CUDACC__
-			;//= {"NLJ", nestedLoopsJoin}; // does not play well along --expt-relaxed-constexpr
+			{"HJC", hashJoinClusteredProbe};//= {"NLJ", nestedLoopsJoin}; // does not play well along --expt-relaxed-constexpr
 #else
 			;
 #endif
@@ -32,7 +33,7 @@ typedef struct inputArgs
 	int threadsNum = 32;
 	//	int selectivity = 1;
 	int valuesPerThread = 2;
-	int sharedMem = 30 << 10; //这是啥
+	int sharedMem = 30 << 10; 
 	unsigned int pivotsNum = 1;
 	int one_to_many = 0;
 	int RelsMultiplier = 1;

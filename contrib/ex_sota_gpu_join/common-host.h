@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-07-05 12:14:00
- * @LastEditTime: 2021-07-05 12:14:08
+ * @LastEditTime: 2021-07-08 10:38:14
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/ex_sota_gpu_join/common-host.h
@@ -47,9 +47,11 @@ typedef unsigned long int uint64_t;
 
 typedef struct args {
 	int *S;
+    int *S_v;
 	size_t S_els;
 	char S_filename[50];
 	int *R;
+    int *R_v;
 	size_t R_els;
 	char R_filename[50];
 	int threadsNum;

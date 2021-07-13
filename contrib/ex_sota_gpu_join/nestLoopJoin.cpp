@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-06-04 11:15:49
- * @LastEditTime: 2021-07-05 11:25:27
+ * @LastEditTime: 2021-07-08 14:13:39
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/external_gpu_join/nestLoopJoin.cpp
@@ -136,21 +136,60 @@ void moveResulttoHostforHash(void* arg)
     /*put result to host, then put it to queue*/
 }
 
+
+void moveResulttoHostforICDE(void* arg)
+{
+    ereport(LOG, (errmsg("------------------BEGIN: moveResulttoHostforHash")));
+    ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
+    cudaError_t cudaStatus =
+        cudaMemcpy(ejs->res, ejs->d_res, ejs->T_num[1] * sizeof(Resultkv), cudaMemcpyDeviceToHost);
+        ereport(LOG, (errmsg("T_num(1):  %d  sizeof(Resultkv) %d\n", ejs->T_num[1], sizeof(Resultkv))));
+
+    for (long i = 0; i <ejs->T_num[1]; i++) {
+
+        // if ((ejs->res + i)->key1 ==  kEmpty )
+        //     continue;
+
+        if ((ejs->res + i)->key1 != kEmpty) {
+
+            //ereport(LOG,(errmsg("Result is   %d %f %d %f\n",(ejs->res + i)->key1, (ejs->res + i)->val1, (ejs->res +i)->key2, (ejs->res + i)->val2 )));
+            uint32_t k1 = (ejs->res + i)->key1;
+            uint32_t d1 = (ejs->res + i)->val1;
+            uint32_t k2 = (ejs->res + i)->key2;
+            uint32_t d2 = (ejs->res + i)->val2;
+            // ejs->prb.put((ejs->res + i)->key1, (ejs->res + i)->dval1, (ejs->res + i)->key2, (ejs->res + i)->dval2);
+            ejs->prb.put(k1, d1, k2, d2);
+        }
+    }
+
+    ereport(LOG, (errmsg("------------------END: moveResulttoHostforHash")));
+    /*put result to host, then put it to queue*/
+}
+
 int invokeICDE(void* arg)
 {
+	ereport(LOG, (errmsg("------------------BEGIN: invokeICDE")));
     ExternalJoinState* ejs = static_cast<ExternalJoinState*>(arg);
+
     
 	timingInfo time;
 	inputArgs input;
-//	parseInputArgs(argc, argv, &input);
+	//parseInputArgs(argc, argv, &input);
 
     input.option = 7;
     input.SelsMultiplier = 1;
     input.RelsMultiplier = 1;
     input.RelsNum = ejs->T_num[0];
     input.SelsNum = ejs->T_num[1];
+
+	ejs->res = (struct Resultkv*)malloc(input.RelsNum  * sizeof(Resultkv));
+    cudaError_t cudaStatus = cudaMalloc((void**)&ejs->d_res, input.RelsNum  * sizeof(Resultkv));
+    cudaMemset(ejs->d_res, 0xff, sizeof(KeyValue) * kHashTableCapacity);
+
     input.uniqueKeys = 1;
     input.fullRange = 0;
+	
+	input.alg.joinAlg = algs[0].joinAlg;
     strcpy(input.alg.name, "HJC");
 
 	int dev = 0;
@@ -269,8 +308,27 @@ int invokeICDE(void* arg)
 #elif defined(MEM_HOST)
 		//CHK_ERROR(cudaHostAlloc((void **)&joinArgs.S, S_bytes, cudaHostAllocMapped)); //cxs 主机内存到设备内存的映射，设备端不需要额外开辟内存
 		//CHK_ERROR(cudaHostAlloc((void **)&joinArgs.R, R_bytes, cudaHostAllocMapped));
+	ereport(LOG, (errmsg("------------------BEGIN: get tupleBuffer *")));
+
+        TupleBuffer* tbr = ejs->tbq.pop();		
+		joinArgs.R = (int *)(tbr->getBufferPointer(0));	//
+		printf("tuple in R: %d %d\n",*joinArgs.R, *(joinArgs.R+1));
+				printf("0--address of R: %d\n", joinArgs.R);
+
+	    //TupleBuffer::destructor(tbr);
+
+		ereport(LOG, (errmsg("------------------BEGIN: get joinArgs.R *")));
+
         TupleBuffer* tbl = ejs->tbq.pop();
-        TupleBuffer* tbr = ejs->tbq.pop();
+		joinArgs.S = (int *)(tbl->getBufferPointer(0));
+		printf("tuple in S: %d %d\n",*joinArgs.S, *(joinArgs.S+2));
+		//TupleBuffer::destructor(tbl);
+
+		printf("1--address of R: %d\n", joinArgs.R);
+		    //  for (size_t i = 0; i < 100; i++) {
+            // printf("%d\n", *(joinArgs.R+i));
+    		//}
+
 #endif
 
 		if (input.fileInput)
@@ -302,7 +360,10 @@ int invokeICDE(void* arg)
 			if (Q_r == NULL)
 			{
 				//create_relation_unique(joinArgs.R_filename, joinArgs.R, joinArgs.R_els, joinArgs.R_els); //cxs step into there to create relation
-                joinArgs.R = (int *)tbr->getBufferPointer(0);
+                	ereport(LOG, (errmsg("------------------BEGIN: joinArgs.R")));
+
+				//joinArgs.R = (int *)tbr->getBufferPointer(0);
+				ereport(LOG, (errmsg("------------------End: joinArgs.R")));
             }
 			else
 			{
@@ -312,6 +373,9 @@ int invokeICDE(void* arg)
 
 			if (Q_s == NULL)
 			{
+				ereport(LOG, (errmsg("------------------Q_s == NULL")));
+				ereport(LOG, (errmsg("------------------input.skew: %f", input.skew)));
+
 				if (input.skew > 0)
 				{
 					/* S is skewed */
@@ -326,13 +390,17 @@ int invokeICDE(void* arg)
 					/* S is uniform foreign key */
 					printf("Creating relation S with %lu tuples (%d MB) using unique keys : ", joinArgs.S_els,
 								 S_bytes / 1024 / 1024);
-					fflush(stdout);																	//cxs step into there
-					create_relation_unique(joinArgs.S_filename, joinArgs.S, joinArgs.S_els, joinArgs.R_els);
-                    joinArgs.S = (int *)tbl->getBufferPointer(0);
+					//fflush(stdout);																	//cxs step into there
+					//create_relation_unique(joinArgs.S_filename, joinArgs.S, joinArgs.S_els, joinArgs.R_els);
+                    
+					ereport(LOG, (errmsg("------------------BEGIN: joinArgs.S")));
+					//joinArgs.S = (int *)tbl->getBufferPointer(0);
                 }
 			}
 			else
 			{
+				ereport(LOG, (errmsg("------------------Q_s != NULL")));
+
 				if (input.skew > 0)
 				{
 					/* S is skewed */
@@ -355,7 +423,7 @@ int invokeICDE(void* arg)
 				fflush(stdout);
 			}
 
-			fflush(stdout);
+			//fflush(stdout);
 		}
 		else
 		{
@@ -377,7 +445,7 @@ int invokeICDE(void* arg)
 			joinArgs.threadsNum = input.threadsNum;
 			printf("%s : shareMemory = %ld\t#threads = %d\n", input.alg.name, joinArgs.sharedMem,
 						 joinArgs.threadsNum);
-			fflush(stdout);
+			//fflush(stdout);
 
 #if defined(MEM_DEVICE)
 			printf("memory alloc done\n");
@@ -398,9 +466,31 @@ int invokeICDE(void* arg)
 			CHK_ERROR(cudaMemcpy(joinArgs.S, S_host, S_bytes, cudaMemcpyHostToDevice));
 			free(S_host);
 #endif
+							ereport(LOG, (errmsg("------------------Begin: true join")));
+
 			recordTime(&time.start[time.n - 1]);
-			uint64_t joinsNum = input.alg.joinAlg(&joinArgs, &time); //cxs join there
+			
+			ereport(LOG, (errmsg("------------------BEGIN: ready into ICDE join")));
+			uint64_t joinsNum = input.alg.joinAlg(&joinArgs, &time, ejs->d_res); //cxs join there
+
+
+			// //cxs
+            // Resultkv* tmp = (struct Resultkv*)malloc(100  * sizeof(Resultkv));
+
+            // cudaMemcpy(tmp, ejs->d_res, 100 * sizeof(Resultkv), cudaMemcpyDeviceToHost);
+
+            // std::cout<<"let's see the answer in invokeICDE"<<std::endl;
+            // std::cout<< "tmp:  "<<tmp->key1<<"  "<<tmp->val1<<std::endl;
+
+			ereport(LOG, (errmsg("------------------End: ICDE join")));
+
 			recordTime(&time.end[time.n - 1]);
+			moveResulttoHostforICDE(ejs);
+			
+			/*TODO
+			Copy Data to Host
+			assigend by cxs
+			*/
 
 			cudaDeviceReset();
 #if defined(MEM_HOST)

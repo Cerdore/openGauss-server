@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-06-04 11:15:49
- * @LastEditTime: 2021-06-08 03:15:19
+ * @LastEditTime: 2021-07-08 02:51:58
  * @LastEditors: Please set LastEditors
  * @Description: In User Settings Edit
  * @FilePath: /openGauss-server/contrib/external_gpu_join/nestLoopJoin.cpp
@@ -68,6 +68,10 @@ void moveTupletoGPU(void* arg)
         ejs->d_tuple[cnt] = d_tuple[cnt];
 
         ejs->T_size[cnt] = tb->tupleNum;
+
+        int * point;
+        point = reinterpret_cast<int*>(tb->getBufferPointer());
+
         TupleBuffer::destructor(tb);
 
         cnt++;

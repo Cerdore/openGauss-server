@@ -25,6 +25,7 @@ SOFTWARE.*/
 #include <cinttypes>
 #include "common.h"
 #include "common-host.h"
+#include "TupleResult.hpp"
 
 #define CLUSTERING_FACTOR 64
 
@@ -138,7 +139,8 @@ __global__ void join_partitioned_aggregate (
                                     const uint32_t*              S_chain,
                                     int32_t                      log_parts,
                                     uint32_t*                    buckets_num,
-                                    int32_t*                     results);
+                                    int32_t*                     results,
+                                    Resultkv* res);
 
 __global__ void join_partitioned_results (
                                     const int32_t*               R,

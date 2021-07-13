@@ -29,6 +29,8 @@ SOFTWARE.*/
 #include "cuda.h"   //cxs
 #include "cuda_runtime.h"
 
+#include "TupleResult.hpp"
+
 __global__ void init_payload (int* R, int n) {
     for (int i = threadIdx.x + blockIdx.x*blockDim.x; i < n; i += blockDim.x*gridDim.x)
         R[i] = i;
@@ -37,7 +39,7 @@ __global__ void init_payload (int* R, int n) {
 /*
 S= keys of data to be partitioned
 P= payloads of data to be partitioned
-heads= keeps information on first bucket per partition and number of elements in it, packet in one 64-bit integer (only used here)
+heads= keeps information on first bucket per partition and number of elements in it, packet in one 64-bit integer (only used here)    (the num << 32
 chains= the successor of a bucket in the bucket list
 out_cnts= number of elements per partition
 buckets_used= how many buckets are reserved by the partitioning already
@@ -71,25 +73,32 @@ __global__ void partition_pass_one (
                                           uint32_t                 log_parts,
                                           uint32_t                 first_bit,
                                           uint32_t                 num_threads) {
-    assert((((size_t) bucket_size) + ((size_t) blockDim.x) * gridDim.x) < (((size_t) 1) << 32));
-    const uint32_t parts     = 1 << log_parts;
-    const int32_t parts_mask = parts - 1;
 
-    uint32_t * router = (uint32_t *) int_shared;
+    // log_parts = 8, cnt = num of S, offsets = NULL, first_bit = 5, heads~chains 未被初始化, num_thread = 16                                              
+    assert((((size_t) bucket_size) + ((size_t) blockDim.x) * gridDim.x) < (((size_t) 1) << 32));
+    const uint32_t parts     = 1 << log_parts;  // parts = 2^8 = 256
+    const int32_t parts_mask = parts - 1;       // parts_mask = 255
+
+
+    //cxs
+    //printf("This is partition pass one\n");
+
+
+    uint32_t * router = (uint32_t *) int_shared;                                // router 是从 int_shared 开始
 
     uint32_t segment = 0;
     size_t segment_limit = offsets[1];
     size_t segment_next = offsets[2];
 
-    size_t* shared_offsets = (size_t*) (int_shared + 1024*4 + 4*parts);
+    size_t* shared_offsets = (size_t*) (int_shared + 1024*4 + 4*parts);         //TODO shared_offsets 从共享内存的数组 int_shared+4096+4*256 = int_shared + 5120 的位置开始
 
     /*if no segmentation in input use one segment with all data, else copy the segment info*/
     if (offsets != NULL) {
-    	for (int i = threadIdx.x; i < 4*num_threads; i += blockDim.x) {
+    	for (int i = threadIdx.x; i < 4*num_threads; i += blockDim.x) {         
         	shared_offsets[i] = offsets[i];
     	}
-	} else {
-		for (int i = threadIdx.x; i < 4*num_threads; i += blockDim.x) {
+	} else {            
+		for (int i = threadIdx.x; i < 4*num_threads; i += blockDim.x) {         // shared_offsets[1] = cnt ，是key总共的个数100, 其余 = 0
 			if (i == 1)
 				shared_offsets[i] = cnt;
 			else
@@ -97,37 +106,44 @@ __global__ void partition_pass_one (
         }
 	}
 
-    shared_offsets[4*num_threads] = cnt+4096;
-    shared_offsets[4*num_threads+1] = cnt+4096;
+    shared_offsets[4*num_threads] = cnt+4096;                                   // shared_offsets[64] = RelsNUM(100) + 4096 = 4196
+    shared_offsets[4*num_threads+1] = cnt+4096;                                 // shared_offsets[65] = 100 + 4096          = 4196
 
     /*partition element counter starts at 0*/
-    for (size_t j = threadIdx.x ; j < parts ; j += blockDim.x ) 
-        router[1024*4 + parts + j] = 0;
+    for (size_t j = threadIdx.x ; j < parts ; j += blockDim.x )
+        router[1024*4 + parts + j] = 0;                                         
     
-    if (threadIdx.x == 0) 
+    if (threadIdx.x == 0)
         router[0] = 0;
 
     __syncthreads();
 
+    //cxs
+    printf("\n segment_start limit end: %d %d %d\n",shared_offsets[0],shared_offsets[1],((shared_offsets[1] - shared_offsets[0] + 4096 - 1)/4096)*4096);
     
     /*iterate over the segments*/
-    for (int u = 0; u < 2*num_threads; u++) {
-        size_t segment_start = shared_offsets[2*u];
-        size_t segment_limit = shared_offsets[2*u + 1]; 
-        size_t segment_end   = segment_start + ((segment_limit - segment_start + 4096 - 1)/4096)*4096;
+    for (int u = 0; u < 2*num_threads; u++) {               // each gpu thread run 32 times, 2*16
+        size_t segment_start = shared_offsets[2*u];         //2*i - [0 ~ 2*31]
+        size_t segment_limit = shared_offsets[2*u + 1];     //2*(i+1) - [1 ~ 2*31+1], e.g. [1] = 100
+        size_t segment_end   = segment_start + ((segment_limit - segment_start + 4096 - 1)/4096)*4096;  // first is 4096
 
-        for (size_t i = 4 *(threadIdx.x + blockIdx.x * blockDim.x) + segment_start; i < segment_end ; i += 4 * blockDim.x * gridDim.x) {
+        //printf("\n segment_start limit end: %d %d %d\n",segment_start,segment_limit,segment_end);
+
+        for (size_t i = 4 *(threadIdx.x + blockIdx.x * blockDim.x) + segment_start; i < segment_end ; i += 4 * blockDim.x * gridDim.x) {    // i = 0 , 4 , < 4096 
             vec4 thread_vals = *(reinterpret_cast<const vec4 *>(S + i));
+
+            //cxs
+            //printf("ThreadId.x %d%d", i);
 
             uint32_t thread_keys[4];
 
-            /*compute local histogram for a chunk of 4*blockDim.x elements*/
+            /*compute local histogram for a chunk of 4*blockDim.x elements 计算大小为4*blockDim.x个元素的块的 本地直方图*/
             #pragma unroll
-            for (int k = 0 ; k < 4 ; ++k){
+            for (int k = 0 ; k < 4 ; ++k){//取出来了4个key，分别计算key的分区位置和前缀和
                 if (i + k < segment_limit){
-                    uint32_t partition = (hasht(thread_vals.i[k]) >> first_bit) & parts_mask;   //分区位置
+                    uint32_t partition = (hasht(thread_vals.i[k]) >> first_bit) & parts_mask;   // 分区位置
 
-                    atomicAdd(router + (1024 * 4 + parts + partition), 1);                      //直方图分区位置+1
+                    atomicAdd(router + (1024 * 4 + parts + partition), 1);                      // 直方图分区位置 Router(1024*4 + parts(256) + partition) 的统计值 +1
                 
                     thread_keys[k] = partition;                                                 // thread_keys[k] 保留分区
                 } else {
@@ -137,8 +153,8 @@ __global__ void partition_pass_one (
 
             __syncthreads();
 
-            for (size_t j = threadIdx.x; j < parts ; j += blockDim.x ) {                            // 遍历直方图     
-                uint32_t cnt = router[1024 * 4 + parts + j];
+            for (size_t j = threadIdx.x; j < parts ; j += blockDim.x ) {                            // 遍历直方图   j: 0~256  
+                uint32_t cnt = router[1024 * 4 + parts + j];                                        // cnt = router[4096 + 256 + j]
 
                 if (cnt > 0){
                     atomicAdd(out_cnts + j, cnt);                                                   // 直方图的值被赋到 out_cnts 里
@@ -348,13 +364,14 @@ __global__ void partition_pass_two (
                                           int32_t   * __restrict__ output_S,
                                           int32_t   * __restrict__ output_P,
                                           uint32_t                 S_log_parts,
-                                          uint32_t                 log_parts,
+                                          uint32_t                 log_parts,   
                                           uint32_t                 first_bit,
                                           uint32_t  *              bucket_num_ptr) {
+    // S_log_parts = 8, log_parts = 5, first_bit = 0             
     assert((((size_t) bucket_size) + ((size_t) blockDim.x) * gridDim.x) < (((size_t) 1) << 32));
-    const uint32_t S_parts   = 1 << S_log_parts;
-    const uint32_t parts     = 1 << log_parts;
-    const int32_t parts_mask = parts - 1;
+    const uint32_t S_parts   = 1 << S_log_parts;   // 256
+    const uint32_t parts     = 1 << log_parts;  // parts = 32
+    const int32_t parts_mask = parts - 1;       // 31
 
     uint32_t buckets_num = *bucket_num_ptr;
 
@@ -490,6 +507,9 @@ __global__ void partition_pass_two (
                 bucket += cnt;
             
                 output_S[bucket] = val;
+              //cxs
+  
+//                printf("output_S[%d]: %d\n", bucket, val);
 
                 thread_parts[k] = partition;
             }
@@ -895,14 +915,16 @@ __global__ void join_partitioned_aggregate (
                                     const uint32_t*              S_chain,
                                     int32_t                      log_parts,
                                     uint32_t*                    buckets_num,
-                                    int32_t*                     results) {
+                                    int32_t*                     results,
+                                    Resultkv* res) {
 
     /*in order to saze space, we discard the partitioning bits, then we can try fitting keys in int16_t [HACK]*/
     __shared__ int16_t elem[4096 + 512];
     __shared__ int32_t payload[4096 + 512];
     __shared__ int16_t next[4096 + 512];
     __shared__ int32_t head[LOCAL_BUCKETS];
-
+    
+    // 1 grid has 256 block, 1 block has 512 thread.
 
     int tid = threadIdx.x;
     int block = blockIdx.x;
@@ -915,9 +937,13 @@ __global__ void join_partitioned_aggregate (
 
     int count = 0;
 
-    int buckets_cnt = *buckets_num;
+    int buckets_cnt = *buckets_num;     // Reslnum = 100, buckets_cnt = 8192
+    
+    // //cxs
+    // if(tid<100)
+    //     res[tid].key1 = ;
 
-    for (uint32_t bucket_r = block; bucket_r < buckets_cnt; bucket_r += pwidth) {
+    for (uint32_t bucket_r = block; bucket_r < buckets_cnt; bucket_r += pwidth) {       // (blockIdx.x ~ 8192)
         int info = bucket_info[bucket_r];
 
         if (info != 0) {
@@ -948,15 +974,19 @@ __global__ void join_partitioned_aggregate (
 
                         int cnt = 0;                    
 
+                        ////cxs
+                        //printf("let's see %d\n",bucket_size * bucket_r_loop + base_r + 4*threadIdx.x);
+                    
                         #pragma unroll
                         for (int k = 0; k < 4; k++) {
                             if (k < l_cnt_R) {
+                                //printf("let's see %d\n",bucket_size * bucket_r_loop + base_r + 4*threadIdx.x);
                                 int val = data_R.i[k];
                                 elem[base_r + k*blockDim.x + tid] = (int16_t) (val >> (LOCAL_BUCKETS_BITS + log_parts));
                                 payload[base_r + k*blockDim.x + tid] = data_Pr.i[k];
                                 int hval = (val >> log_parts) & (LOCAL_BUCKETS - 1);
 
-                                int32_t last = atomicExch(&head[hval], base_r + k*blockDim.x + tid);
+                                int32_t last = atomicExch(&head[hval], base_r + k*blockDim.x + tid);        // base_r + k*blockDim.x + tid 就是在elem[] & paload[]偏移
                                 next[base_r + k*blockDim.x + tid] = last;
                             }
                         }
@@ -983,10 +1013,26 @@ __global__ void join_partitioned_aggregate (
                             int32_t hval =  (val >> log_parts) & (LOCAL_BUCKETS - 1);
 
                             if (k < l_cnt_S) {
+                                
+                                //printf("let's see %d\n",bucket_size * bucket_s_loop + base_s + 4*threadIdx.x);
+
                                 int32_t pos = head[hval];
                                 while (pos >= 0) {
                                     if (elem[pos] == tval) {
                                         count += pval*payload[pos];
+                                        
+
+                                        // /*test*/
+                                        // int res_pos = bucket_size * bucket_s_loop + base_s + 4*threadIdx.x + k;
+                                        
+                                        // //cxs
+                                        // //printf("get a match tuple at pos[%d]: \n", res_pos);
+                                        // if(res_pos<100){
+                                        //     res[res_pos].key1 = 222;                                        
+                                        //     res[res_pos].val1 = payload[pos];
+                                        //     res[res_pos].key2 = val;                
+                                        //     res[res_pos].val2 = pval;                                        
+                                        // }
                                     }
 
                                     pos = next[pos];
@@ -1069,10 +1115,25 @@ __global__ void join_partitioned_aggregate (
                         int32_t hval =  (val >> log_parts) & (LOCAL_BUCKETS - 1);
 
                         if (k < l_cnt_R) { 
+
+                            //printf("let's see probe from R-side: %d\n", bucket_size * it + off + 4*threadIdx.x);
+                            
+                                                        
                             int32_t pos = head[hval];
                             while (pos >= 0) {
                                 if (elem[pos] == tval) {
                                     count += pval*payload[pos];
+                                     /*test*/
+                                        //int res_pos = bucket_size * it + off + 4*threadIdx.x + k;
+                                        
+                                        //cxs
+                                        //printf("get a match tuple at pos[%d]: \n", res_pos);
+                                        //if(res_pos<100){
+                                            // res[0].key1 = 111;                                        
+                                            // res[0].val1 = payload[pos];
+                                            // res[0].key2 = val;                
+                                            // res[0].val2 = pval;                                        
+                                        //}
                                 }
 
                                 pos = next[pos];
@@ -1582,6 +1643,7 @@ __global__ void probe_perfect_array_varpay (int32_t* data, int32_t* Dr, int n, i
     atomicAdd(aggr, count);
 }
 
+// log_parts1 = 8, log_parts2 = 5.
 /*partition and compute metadata for relation with key+payload*/    //cxs step into there
 void prepare_Relation_payload (int* R, int* R_temp, int* P, int* P_temp, size_t RelsNum, uint32_t buckets_num, uint64_t* heads[2], uint32_t* cnts[2], uint32_t* chains[2],
  uint32_t* buckets_used[2], uint32_t log_parts1, uint32_t log_parts2, uint32_t first_bit, cudaStream_t streams, size_t* offsets_GPU, uint32_t num_threads) {
@@ -1604,9 +1666,19 @@ void prepare_Relation_payload (int* R, int* R_temp, int* P, int* P_temp, size_t 
                                                 num_threads
     );
 
+    // //cxs
+    // int* tmp = (int *)malloc(100  * sizeof(int));
+
+    // cudaMemcpy(tmp, R_temp, 100 * sizeof(int), cudaMemcpyDeviceToHost);
+
+    // printf("After partition_pass_one: \n");
+    // for(int i=0;i<100;i++){
+    //     printf("%d\t", tmp[i]);
+    //     if(i%10==0) printf("\n");
+    // }
 
     compute_bucket_info <<<64, 1024, 0, streams>>> (chains[0], cnts[0], log_parts1);
-
+    //cxs chains[0] 为什么可以变成 bukectinfo
     partition_pass_two <<<64, 1024, (1024*4 + 4*(1 << log_parts2)) * sizeof(int32_t) + ((2 * (1 << log_parts2) + 1)* sizeof(int32_t)), streams>>>(
                                     R_temp, P_temp,
                                     chains[0],
@@ -1614,6 +1686,17 @@ void prepare_Relation_payload (int* R, int* R_temp, int* P, int* P_temp, size_t 
                                     R, P,
                                     log_parts1, log_parts2, first_bit,
                                     buckets_used[0]);
+
+    //cxs
+    int* tmp2 = (int *)malloc(100  * sizeof(int));
+
+    cudaMemcpy(tmp2, R, 100 * sizeof(int), cudaMemcpyDeviceToHost);
+
+    printf("\n After partition_pass_two: \n");
+    for(int i=0;i<100;i++){
+        printf("%d\t", tmp2[i]);
+        if(i%10==0) printf("\n");
+    }
 
 }
 
