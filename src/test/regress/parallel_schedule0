@@ -4,13 +4,11 @@
 # By convention, we put no more than twenty tests in any one parallel group;
 # this limits the number of connections needed to run the tests.
 # ----------
-
 test: analyze_commands
 #test: single_node_job
 test: single_node_ddl
 test: single_node_sqlbypass
 test: median
-
 
 # run tablespace by itself, and first, because it forces a checkpoint;
 # we'd prefer not to have checkpoints later in the tests because that
@@ -644,7 +642,7 @@ test: copy2 temp
 test: truncate
 #test: temp_table
 
-#test: b_compatibility
+test: b_compatibility
 test: hw_compatibility
 test: hw_groupingsets hw_row_grouping_set
 test: char_truncation_common char_truncation_cast
@@ -689,7 +687,8 @@ test: advisory_lock
 # ----------
 # Another group of parallel tests
 # ----------
-test: cluster dependency bitmapops tsdicts functional_deps json
+test: cluster dependency bitmapops tsdicts functional_deps
+test: json_and_jsonb json jsonb jsonb2
 #test: guc
 
 # test for vec sonic hash
@@ -741,7 +740,9 @@ test: hw_partition_hash_dml
 test: hw_partition_hash_dql
 test: hw_partition_list_dml
 test: hw_partition_list_dql
-
+test: hw_cipher_sm4
+test: hw_cipher_aes128
+test: hw_pwd_encryption_sm3
 test: rule_test
 
 #delete limit
@@ -760,5 +761,11 @@ test: leaky_function_operator
 #test: gs_guc
 
 test: smp
+
+#generated column test
+test: generated_col
+
 test: sequence_cache_test
 test: procedure_privilege_test
+
+test: cstore_unique_index

@@ -18,6 +18,7 @@
 #include "knl/knl_variable.h"
 
 #include "access/cstore_delete.h"
+#include "access/cstore_delta.h"
 #include "access/cstore_insert.h"
 #include "access/cstore_rewrite.h"
 #include "access/dfs/dfs_am.h"
@@ -395,7 +396,8 @@ typedef OldToNewChunkIdMappingData* OldToNewChunkIdMapping;
         (cmd) == AT_SetTableSpace || (cmd) == AT_SetPartitionTableSpace || (cmd) == AT_SetOptions ||                \
         (cmd) == AT_ResetOptions || (cmd) == AT_SetStorage || (cmd) == AT_SetRelOptions ||                          \
         (cmd) == AT_ResetRelOptions || (cmd) == AT_MergePartition || (cmd) == AT_ChangeOwner ||                     \
-        (cmd) == AT_EnableRls || (cmd) == AT_DisableRls || (cmd) == AT_ForceRls || (cmd) == AT_NoForceRls)
+        (cmd) == AT_EnableRls || (cmd) == AT_DisableRls || (cmd) == AT_ForceRls || (cmd) == AT_NoForceRls ||        \
+        (cmd) == AT_AddIndex || (cmd) == AT_AddIndexConstraint)
 
 #define DFS_SUPPORT_AT_CMD(cmd)                                                                              \
     ((cmd) == AT_AddNodeList || (cmd) == AT_SubCluster || (cmd) == AT_AddColumn || (cmd) == AT_DropColumn || \
@@ -449,6 +451,7 @@ static void ATRewriteTable(AlteredTableInfo* tab, Relation oldrel, Relation newr
 static void ATCStoreRewriteTable(AlteredTableInfo* tab, Relation heapRel, LOCKMODE lockMode, Oid targetTblspc);
 static void ATCStoreRewritePartition(AlteredTableInfo* tab, LOCKMODE lockMode);
 static void at_timeseries_check(Relation rel, AlterTableCmd* cmd);
+static void ATOnlyCheckCStoreTable(AlteredTableInfo* tab, Relation rel);
 
 static void PSortChangeTableSpace(Oid psortOid, Oid newTableSpace, LOCKMODE lockmode);
 static void ForbidToRewriteOrTestCstoreIndex(AlteredTableInfo* tab);
@@ -692,6 +695,7 @@ static bool WLMRelationCanTruncate(Relation rel);
 static OnCommitAction GttOncommitOption(const List *options);
 static void ATCheckDuplicateColumn(const AlterTableCmd* cmd, const List* tabCmds);
 static void ATCheckNotNullConstr(const AlterTableCmd* cmd, const AlteredTableInfo* tab);
+static void DelDependencONDataType(Relation rel, Relation depRel, const Form_pg_attribute attTup);
 
 /* get all partitions oid */
 static List* get_all_part_oid(Oid relid)
@@ -2199,14 +2203,20 @@ Oid DefineRelation(CreateStmt* stmt, char relkind, Oid ownerId)
                         isMOTTableFromSrvName(((CreateForeignTableStmt*)stmt)->servername) ||
 #endif
                         isPostgresFDWFromSrvName(((CreateForeignTableStmt*)stmt)->servername))))
-                    ereport(ERROR,
-                        (errcode(ERRCODE_WRONG_OBJECT_TYPE),
-                            errmsg("default values on foreign tables are not supported")));
+                    ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE), errmsg("%s on foreign tables are not supported",
+                        colDef->generatedCol ? "generated column" : "default values")));
+#ifdef ENABLE_MOT
+                if (IsA(stmt, CreateForeignTableStmt) &&
+                    isMOTTableFromSrvName(((CreateForeignTableStmt *)stmt)->servername) && colDef->generatedCol) {
+                    ereport(ERROR, (errmodule(MOD_GEN_COL), errcode(ERRCODE_WRONG_OBJECT_TYPE),
+                        errmsg("generated column on foreign tables are not supported")));
+                }
+#endif
             }
 
             if (relkind == RELKIND_STREAM) {
-                ereport(ERROR,
-                    (errcode(ERRCODE_WRONG_OBJECT_TYPE), errmsg("default values on streams are not supported")));
+                ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE), errmsg("%s on streams are not supported",
+                    colDef->generatedCol ? "generated column" : "default values")));
             }
 
             Assert(colDef->cooked_default == NULL);
@@ -2214,13 +2224,18 @@ Oid DefineRelation(CreateStmt* stmt, char relkind, Oid ownerId)
             rawEnt = (RawColumnDefault*)palloc(sizeof(RawColumnDefault));
             rawEnt->attnum = attnum;
             rawEnt->raw_default = colDef->raw_default;
+            rawEnt->generatedCol = colDef->generatedCol;
             rawDefaults = lappend(rawDefaults, rawEnt);
             descriptor->attrs[attnum - 1]->atthasdef = true;
         } else if (colDef->cooked_default != NULL) {
             CookedConstraint* cooked = NULL;
 
             cooked = (CookedConstraint*)palloc(sizeof(CookedConstraint));
-            cooked->contype = CONSTR_DEFAULT;
+
+            if (colDef->generatedCol)
+                cooked->contype = CONSTR_GENERATED;
+            else
+                cooked->contype = CONSTR_DEFAULT;
             cooked->name = NULL;
             cooked->attnum = attnum;
             cooked->expr = colDef->cooked_default;
@@ -2414,7 +2429,7 @@ Oid DefineRelation(CreateStmt* stmt, char relkind, Oid ownerId)
     rel = relation_open(relationId, AccessExclusiveLock);
 
     /*
-     * Now add any newly specified column default values and CHECK constraints
+     * Now add any newly specified column default and generation expressions
      * to the new relation.  These are passed to us in the form of raw
      * parsetrees; we need to transform them to executable expression trees
      * before they can be added. The most convenient way to do that is to
@@ -4178,6 +4193,7 @@ static List* MergeAttributes(
                     coldef->constraints = restdef->constraints;
                     coldef->is_from_type = false;
                     coldef->kvtype = restdef->kvtype;
+                    coldef->generatedCol = restdef->generatedCol;
                     coldef->cmprs_mode = restdef->cmprs_mode;
                     list_delete_cell(schema, rest, prev);
                 } else {
@@ -4340,6 +4356,12 @@ static List* MergeAttributes(
                 }   
                 /* Default and other constraints are handled below */
                 newattno[parent_attno - 1] = exist_attno;
+
+                /* Check for GENERATED conflicts */
+                if (def->generatedCol != GetGeneratedCol(tupleDesc, parent_attno - 1)) {
+                    ereport(ERROR, (errmodule(MOD_GEN_COL), errcode(ERRCODE_DATATYPE_MISMATCH),
+                        errmsg("inherited column \"%s\" has a generation conflict", attributeName)));
+                }
             } else {
                 /*
                  * No, create a new inherited column
@@ -4355,6 +4377,7 @@ static List* MergeAttributes(
                 def->kvtype = attribute->attkvtype;
                 def->cmprs_mode = attribute->attcmprmode;
                 def->raw_default = NULL;
+                def->generatedCol = '\0';
                 def->cooked_default = NULL;
                 def->collClause = NULL;
                 def->collOid = attribute->attcollation;
@@ -4574,11 +4597,17 @@ static List* MergeAttributes(
         foreach (entry, schema) {
             ColumnDef* def = (ColumnDef*)lfirst(entry);
 
-            if (def->cooked_default == &u_sess->cmd_cxt.bogus_marker)
-                ereport(ERROR,
-                    (errcode(ERRCODE_INVALID_COLUMN_DEFINITION),
+            if (def->cooked_default == &u_sess->cmd_cxt.bogus_marker) {
+                if (def->generatedCol) {
+                    ereport(ERROR, (errmodule(MOD_GEN_COL), errcode(ERRCODE_INVALID_COLUMN_DEFINITION),
+                        errmsg("column \"%s\" inherits conflicting generated column", def->colname),
+                        errhint("To resolve the conflict, specify a generated expr explicitly.")));
+                } else {
+                    ereport(ERROR, (errcode(ERRCODE_INVALID_COLUMN_DEFINITION),
                         errmsg("column \"%s\" inherits conflicting default values", def->colname),
                         errhint("To resolve the conflict, specify a default explicitly.")));
+                }
+            }
         }
     }
 
@@ -6294,6 +6323,25 @@ static LOCKMODE set_lockmode(LOCKMODE mode, LOCKMODE cmd_mode)
     return mode;
 }
 
+#ifndef ENABLE_MULTIPLE_NODES
+static LOCKMODE GetPartitionLockLevel(AlterTableType subType)
+{
+    LOCKMODE cmdLockMode;
+    switch (subType) {
+        case AT_AddPartition:
+        case AT_DropPartition:
+        case AT_ExchangePartition:
+        case AT_TruncatePartition:
+            cmdLockMode = RowExclusiveLock;
+            break;
+        default:
+            cmdLockMode = AccessExclusiveLock;
+            break;
+    }
+    return cmdLockMode;
+}
+#endif
+
 /*
  * AlterTableGetLockLevel
  *
@@ -6542,6 +6590,10 @@ LOCKMODE AlterTableGetLockLevel(List* cmds)
         foreach (lcmd, cmds) {
             LOCKMODE cmd_lockmode = AccessExclusiveLock;
 
+#ifndef ENABLE_MULTIPLE_NODES
+            AlterTableCmd* cmd = (AlterTableCmd *)lfirst(lcmd);
+            cmd_lockmode = GetPartitionLockLevel(cmd->subtype);
+#endif
             /* update with the higher lock mode */
             lockmode = set_lockmode(lockmode, cmd_lockmode);
         }
@@ -7890,6 +7942,82 @@ static void ATRewriteTable(AlteredTableInfo* tab, Relation oldrel, Relation newr
 }
 
 /*
+ * ATOnlyCheckCStoreTable
+ * Only support not-null constraint check currently.
+ */
+static void ATOnlyCheckCStoreTable(AlteredTableInfo* tab, Relation rel)
+{
+    TupleDesc oldTupDesc = NULL;
+    TupleDesc newTupDesc = NULL;
+    List* notnullAttrs = NIL;
+    bool needscan = false;
+
+    oldTupDesc = tab->oldDesc;
+    newTupDesc = RelationGetDescr(rel); /* includes all mods */
+
+    if (tab->constraints != NIL || tab->newvals != NIL) {
+        ereport(ERROR,
+        (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+            errmsg("Un-support feature"),
+            errdetail("column stored relation doesn't support this feature")));
+    }
+
+    if (tab->new_notnull) {
+        /*
+         * If we added any new NOT NULL constraints, check all not-null constraints.
+         */
+        for (int i = 0; i < newTupDesc->natts; i++) {
+            if (newTupDesc->attrs[i]->attnotnull && !newTupDesc->attrs[i]->attisdropped)
+                notnullAttrs = lappend_int(notnullAttrs, i);
+        }
+        if (notnullAttrs != NULL)
+            needscan = true;
+    }
+
+    if (needscan) {
+        CStoreScanDesc cstoreScan = NULL;
+        VectorBatch* vecScanBatch = NULL;
+        int attrNum = list_length(notnullAttrs);
+        AttrNumber* colIdx = (AttrNumber*)palloc(sizeof(AttrNumber) * attrNum);
+        int n = 0;
+        ListCell* cell;
+        ScalarVector *vec;
+        foreach (cell, notnullAttrs) {
+            colIdx[n++] = lfirst_int(cell) + 1;
+        }
+
+        ereport(DEBUG1, (errmsg("verifying table \"%s\"", RelationGetRelationName(rel))));
+
+        /*
+         * Scan through the cstore, generating a new row if needed and then
+         * checking constraints.
+         */
+        cstoreScan = CStoreBeginScan(rel, attrNum, colIdx, SnapshotNow, false);
+
+        do {
+            vecScanBatch = CStoreGetNextBatch(cstoreScan);
+            vec = vecScanBatch->m_arr;
+            for (int rowIdx = 0; rowIdx < vecScanBatch->m_rows; rowIdx++) {
+                for (n = 0; n < attrNum; ++n ) {
+                    int attn = colIdx[n] - 1;
+                    if (vec[attn].IsNull(rowIdx)) {
+                        ereport(ERROR,
+                        (errcode(ERRCODE_NOT_NULL_VIOLATION),
+                            errmsg("column \"%s\" contains null values", NameStr(newTupDesc->attrs[attn]->attname))));
+                    }
+                }
+            }
+        } while (!CStoreIsEndScan(cstoreScan));
+
+        CStoreEndScan(cstoreScan);
+
+        pfree_ext(colIdx);
+    }
+
+    list_free_ext(notnullAttrs);
+}
+
+/*
  * ATGetQueueEntry: find or create an entry in the ALTER TABLE work queue
  */
 static AlteredTableInfo* ATGetQueueEntry(List** wqueue, Relation rel)
@@ -8129,7 +8257,7 @@ void find_composite_type_dependencies(Oid typeOid, Relation origRelation, const 
     ScanKeyInit(&key[0], Anum_pg_depend_refclassid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(TypeRelationId));
     ScanKeyInit(&key[1], Anum_pg_depend_refobjid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(typeOid));
 
-    depScan = systable_beginscan(depRel, DependReferenceIndexId, true, SnapshotNow, 2, key);
+    depScan = systable_beginscan(depRel, DependReferenceIndexId, true, NULL, 2, key);
 
     while (HeapTupleIsValid(depTup = systable_getnext(depScan))) {
         Form_pg_depend pg_depend = (Form_pg_depend)GETSTRUCT(depTup);
@@ -8582,12 +8710,12 @@ static void ATExecAddColumn(List** wqueue, AlteredTableInfo* tab, Relation rel, 
 #else
             if (!isPostgresFDWFromTblOid(RelationGetRelid(rel))) {
 #endif
-                ereport(ERROR,
-                    (errcode(ERRCODE_WRONG_OBJECT_TYPE), errmsg("default values on foreign tables are not supported")));
+                ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE), errmsg("%s on foreign tables are not supported",
+                    colDef->generatedCol ? "generated column" : "default values")));
             }
         } else if (relkind ==  RELKIND_STREAM) {
-            ereport(ERROR,
-                (errcode(ERRCODE_WRONG_OBJECT_TYPE), errmsg("default values on streams are not supported")));
+            ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE), errmsg("%s on streams are not supported",
+                colDef->generatedCol ? "generated column" : "default values")));
         } else if (RelationIsTsStore(rel)) {
             ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
                 errmsg("It's not supported to add column with default value for timeseries tables.")));
@@ -8596,6 +8724,8 @@ static void ATExecAddColumn(List** wqueue, AlteredTableInfo* tab, Relation rel, 
         rawEnt = (RawColumnDefault*)palloc(sizeof(RawColumnDefault));
         rawEnt->attnum = attribute.attnum;
         rawEnt->raw_default = (Node*)copyObject(colDef->raw_default);
+
+        rawEnt->generatedCol = colDef->generatedCol;
 
         /*
          * This function is intended for CREATE TABLE, so it processes a
@@ -8686,7 +8816,7 @@ static void ATExecAddColumn(List** wqueue, AlteredTableInfo* tab, Relation rel, 
              * also exclude temp table and column table.
              */
             if (RelationIsCUFormat(rel) || tab->rewrite ||
-                RelationUsesSpaceType(rel->rd_rel->relpersistence) == SP_TEMP) {
+                RelationUsesSpaceType(rel->rd_rel->relpersistence) == SP_TEMP || colDef->generatedCol) {
                 ATExecAppendDefValExpr(attribute.attnum, defval, tab);
             } else {
                 bytea* value = NULL;
@@ -9081,6 +9211,7 @@ static void ATExecSetNotNull(AlteredTableInfo* tab, Relation rel, const char* co
 static void ATExecColumnDefault(Relation rel, const char* colName, Node* newDefault, LOCKMODE lockmode)
 {
     AttrNumber attnum;
+    TupleDesc tupdesc = RelationGetDescr(rel);
 
     /*
      * get the number of the attribute
@@ -9104,6 +9235,11 @@ static void ATExecColumnDefault(Relation rel, const char* colName, Node* newDefa
     if (attnum <= 0)
         ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("cannot alter system column \"%s\"", colName)));
 
+    if (ISGENERATEDCOL(tupdesc, attnum - 1)) {
+        ereport(ERROR, (errmodule(MOD_GEN_COL), errcode(ERRCODE_SYNTAX_ERROR),
+            errmsg("column \"%s\" of relation \"%s\" is a generated column", colName, RelationGetRelationName(rel))));
+    }
+
     /*
      * Remove any old default for the column.  We use RESTRICT here for
      * safety, but at present we do not expect anything to depend on the
@@ -9122,6 +9258,7 @@ static void ATExecColumnDefault(Relation rel, const char* colName, Node* newDefa
         rawEnt = (RawColumnDefault*)palloc(sizeof(RawColumnDefault));
         rawEnt->attnum = attnum;
         rawEnt->raw_default = newDefault;
+        rawEnt->generatedCol = '\0';
 
         /*
          * This function is intended for CREATE TABLE, so it processes a
@@ -9455,12 +9592,15 @@ static bool CheckLastColumn(Relation rel, AttrNumber attrnum)
     for (int col = 0; col < rel->rd_att->natts; ++col) {
         if (rel->rd_att->attrs[col]->attisdropped)
             continue;
+        if (ISGENERATEDCOL(rel->rd_att, col))
+            continue;
         if (col != (attrnum - 1)) {
             return false;
         }
     }
     return true;
 }
+
 
 #ifdef ENABLE_MULTIPLE_NODES
 /* Check if the ALTER TABLE DROP COLUMN operation is valid in timeseries table.
@@ -9781,6 +9921,11 @@ static void ATExecAddIndex(AlteredTableInfo* tab, Relation rel, IndexStmt* stmt,
         check_rights,
         skip_build,
         quiet);
+
+    if (RelationIsCUFormat(rel) && (stmt->primary || stmt->unique)) {
+        DefineDeltaUniqueIndex(RelationGetRelid(rel), stmt, new_index);
+    }
+
 #ifdef ENABLE_MOT
     CreateForeignIndex(stmt, new_index);
 #endif
@@ -10231,6 +10376,34 @@ static void ATAddForeignKeyConstraint(AlteredTableInfo* tab, Relation rel, Const
     checkFkeyPermissions(rel, fkattnum, numfks);
 
     /*
+     * Check some things for generated columns.
+     */
+    for (i = 0; i < numfks; i++)
+    {
+        char generated = GetGeneratedCol(RelationGetDescr(rel), fkattnum[i] - 1);
+
+        if (generated)
+        {
+            /*
+             * Check restrictions on UPDATE/DELETE actions, per SQL standard
+             */
+            if (fkconstraint->fk_upd_action == FKCONSTR_ACTION_SETNULL ||
+                fkconstraint->fk_upd_action == FKCONSTR_ACTION_SETDEFAULT ||
+                fkconstraint->fk_upd_action == FKCONSTR_ACTION_CASCADE)
+                ereport(ERROR,
+                        (errmodule(MOD_GEN_COL), errcode(ERRCODE_SYNTAX_ERROR),
+                         errmsg("invalid %s action for foreign key constraint containing generated column",
+                                "ON UPDATE")));
+            if (fkconstraint->fk_del_action == FKCONSTR_ACTION_SETNULL ||
+                fkconstraint->fk_del_action == FKCONSTR_ACTION_SETDEFAULT)
+                ereport(ERROR,
+                        (errmodule(MOD_GEN_COL), errcode(ERRCODE_SYNTAX_ERROR),
+                         errmsg("invalid %s action for foreign key constraint containing generated column",
+                                "ON DELETE")));
+        }
+    }
+
+    /*
      * Look up the equality operators to use in the constraint.
      *
      * Note that we have to be careful about the difference between the actual
@@ -10531,7 +10704,7 @@ static void ATExecValidateConstraint(Relation rel, char* constrName, bool recurs
      */
     ScanKeyInit(
         &key, Anum_pg_constraint_conrelid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationGetRelid(rel)));
-    scan = systable_beginscan(conrel, ConstraintRelidIndexId, true, SnapshotNow, 1, &key);
+    scan = systable_beginscan(conrel, ConstraintRelidIndexId, true, NULL, 1, &key);
 
     while (HeapTupleIsValid(tuple = systable_getnext(scan))) {
         con = (Form_pg_constraint)GETSTRUCT(tuple);
@@ -11326,7 +11499,7 @@ static void ATExecDropConstraint(Relation rel, const char* constrName, DropBehav
      */
     ScanKeyInit(
         &key, Anum_pg_constraint_conrelid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationGetRelid(rel)));
-    scan = systable_beginscan(conrel, ConstraintRelidIndexId, true, SnapshotNow, 1, &key);
+    scan = systable_beginscan(conrel, ConstraintRelidIndexId, true, NULL, 1, &key);
 
     while (HeapTupleIsValid(tuple = systable_getnext(scan))) {
         ObjectAddress conobj;
@@ -11435,7 +11608,7 @@ static void ATExecDropConstraint(Relation rel, const char* constrName, DropBehav
         CheckTableNotInUse(childrel, "ALTER TABLE");
 
         ScanKeyInit(&key, Anum_pg_constraint_conrelid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(childrelid));
-        scan = systable_beginscan(conrel, ConstraintRelidIndexId, true, SnapshotNow, 1, &key);
+        scan = systable_beginscan(conrel, ConstraintRelidIndexId, true, NULL, 1, &key);
 
         /* scan for matching tuple - there should only be one */
         while (HeapTupleIsValid(tuple = systable_getnext(scan))) {
@@ -11748,6 +11921,50 @@ static bool ATColumnChangeRequiresRewrite(Node* expr, AttrNumber varattno)
     }
 }
 
+static void DelDependencONDataType(const Relation rel, Relation depRel, const Form_pg_attribute attTup)
+{
+    ScanKeyData key[3];
+    SysScanDesc scan;
+    HeapTuple depTup;
+    AttrNumber attnum = attTup->attnum;
+
+    /*
+     * Now scan for dependencies of this column on other things.  The only
+     * thing we should find is the dependency on the column datatype, which we
+     * want to remove, possibly a collation dependency, and dependencies on
+     * other columns if it is a generated column.
+     */
+    ScanKeyInit(&key[0], Anum_pg_depend_classid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationRelationId));
+    ScanKeyInit(&key[1], Anum_pg_depend_objid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationGetRelid(rel)));
+    ScanKeyInit(&key[2], Anum_pg_depend_objsubid, BTEqualStrategyNumber, F_INT4EQ, Int32GetDatum((int32)attnum));
+
+    scan = systable_beginscan(depRel, DependDependerIndexId, true, SnapshotNow, 3, key);
+
+    while (HeapTupleIsValid(depTup = systable_getnext(scan))) {
+        Form_pg_depend foundDep = (Form_pg_depend)GETSTRUCT(depTup);
+        ObjectAddress foundObject;
+        foundObject.classId = foundDep->refclassid;
+        foundObject.objectId = foundDep->refobjid;
+        foundObject.objectSubId = foundDep->refobjsubid;
+
+        if (foundDep->deptype != DEPENDENCY_NORMAL && foundDep->deptype != DEPENDENCY_AUTO) {
+            ereport(ERROR, (errmodule(MOD_GEN_COL), errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                errmsg("found unexpected dependency type '%c'", foundDep->deptype)));
+        }
+        if (!(foundDep->refclassid == TypeRelationId && foundDep->refobjid == attTup->atttypid) &&
+            !(foundDep->refclassid == CollationRelationId && foundDep->refobjid == attTup->attcollation) &&
+            !(foundDep->refclassid == RelationRelationId && foundDep->refobjid == RelationGetRelid(rel) &&
+            foundDep->refobjsubid != 0)) {
+            ereport(ERROR, (errmodule(MOD_GEN_COL), errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                errmsg("found unexpected dependency for column")));
+        }
+
+        simple_heap_delete(depRel, &depTup->t_self);
+    }
+
+    systable_endscan(scan);
+}
+
 static void ATExecAlterColumnType(AlteredTableInfo* tab, Relation rel, AlterTableCmd* cmd, LOCKMODE lockmode)
 {
     char* colName = cmd->name;
@@ -11767,6 +11984,7 @@ static void ATExecAlterColumnType(AlteredTableInfo* tab, Relation rel, AlterTabl
     ScanKeyData key[3];
     SysScanDesc scan;
     HeapTuple depTup;
+    char generatedCol = '\0';
 
     attrelation = heap_open(AttributeRelationId, RowExclusiveLock);
 
@@ -11806,6 +12024,8 @@ static void ATExecAlterColumnType(AlteredTableInfo* tab, Relation rel, AlterTabl
     /* And the collation */
     targetcollid = GetColumnDefCollation(NULL, def, targettype);
 
+    generatedCol = GetGeneratedCol(rel->rd_att, attnum -1);
+
     /*
      * If there is a default expression for the column, get it and ensure we
      * can coerce it to the new datatype.  (We must do this before changing
@@ -11830,10 +12050,17 @@ static void ATExecAlterColumnType(AlteredTableInfo* tab, Relation rel, AlterTabl
             COERCION_ASSIGNMENT,
             COERCE_IMPLICIT_CAST,
             -1);
-        if (defaultexpr == NULL)
-            ereport(ERROR, (errcode(ERRCODE_DATATYPE_MISMATCH),
-                    errmsg("default for column \"%s\" cannot be cast automatically to type %s",
-                        colName, format_type_be(targettype))));
+        if (defaultexpr == NULL) {
+            if (generatedCol == ATTRIBUTE_GENERATED_STORED) {
+                ereport(ERROR, (errmodule(MOD_GEN_COL), errcode(ERRCODE_DATATYPE_MISMATCH),
+                    errmsg("generation expression for column \"%s\" cannot be cast automatically to type %s", colName,
+                    format_type_be(targettype))));
+            } else {
+                ereport(ERROR, (errcode(ERRCODE_DATATYPE_MISMATCH),
+                    errmsg("default for column \"%s\" cannot be cast automatically to type %s", colName,
+                    format_type_be(targettype))));
+            }
+        }
     } else
         defaultexpr = NULL;
 
@@ -11859,7 +12086,7 @@ static void ATExecAlterColumnType(AlteredTableInfo* tab, Relation rel, AlterTabl
         &key[1], Anum_pg_depend_refobjid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationGetRelid(rel)));
     ScanKeyInit(&key[2], Anum_pg_depend_refobjsubid, BTEqualStrategyNumber, F_INT4EQ, Int32GetDatum((int32)attnum));
 
-    scan = systable_beginscan(depRel, DependReferenceIndexId, true, SnapshotNow, 3, key);
+    scan = systable_beginscan(depRel, DependReferenceIndexId, true, NULL, 3, key);
 
     while (HeapTupleIsValid(depTup = systable_getnext(scan))) {
         Form_pg_depend foundDep = (Form_pg_depend)GETSTRUCT(depTup);
@@ -11904,7 +12131,18 @@ static void ATExecAlterColumnType(AlteredTableInfo* tab, Relation rel, AlterTabl
                      * not do anything to it.
                      */
                     Assert(foundObject.objectSubId == 0);
-                } else {
+                } else if (relKind == RELKIND_RELATION && foundObject.objectSubId != 0 &&
+                    GetGenerated(foundObject.objectId, foundObject.objectSubId)) {
+                    /*
+                     * Changing the type of a column that is used by a
+                     * generated column is not allowed by SQL standard. It
+                     * might be doable with some thinking and effort.
+                     */
+                    ereport(ERROR, (errmodule(MOD_GEN_COL), errcode(ERRCODE_SYNTAX_ERROR),
+                        errmsg("cannot alter type of a column used by a generated column"),
+                        errdetail("Column \"%s\" is used by generated column \"%s\".", colName,
+                        get_attname(foundObject.objectId, foundObject.objectSubId))));
+                }else {
                     /* Not expecting any other direct dependencies... */
                     ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
                             errmsg("unexpected object depending on column: %s", getObjectDescription(&foundObject))));
@@ -12012,31 +12250,7 @@ static void ATExecAlterColumnType(AlteredTableInfo* tab, Relation rel, AlterTabl
 
     systable_endscan(scan);
 
-    /*
-     * Now scan for dependencies of this column on other things.  The only
-     * thing we should find is the dependency on the column datatype, which we
-     * want to remove, and possibly a collation dependency.
-     */
-    ScanKeyInit(&key[0], Anum_pg_depend_classid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationRelationId));
-    ScanKeyInit(&key[1], Anum_pg_depend_objid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationGetRelid(rel)));
-    ScanKeyInit(&key[2], Anum_pg_depend_objsubid, BTEqualStrategyNumber, F_INT4EQ, Int32GetDatum((int32)attnum));
-
-    scan = systable_beginscan(depRel, DependDependerIndexId, true, SnapshotNow, 3, key);
-
-    while (HeapTupleIsValid(depTup = systable_getnext(scan))) {
-        Form_pg_depend foundDep = (Form_pg_depend)GETSTRUCT(depTup);
-
-        if (foundDep->deptype != DEPENDENCY_NORMAL)
-            ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-                    errmsg("found unexpected dependency type '%c'", foundDep->deptype)));
-        if (!(foundDep->refclassid == TypeRelationId && foundDep->refobjid == attTup->atttypid) &&
-            !(foundDep->refclassid == CollationRelationId && foundDep->refobjid == attTup->attcollation))
-            ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("found unexpected dependency for column")));
-
-        simple_heap_delete(depRel, &depTup->t_self);
-    }
-
-    systable_endscan(scan);
+    DelDependencONDataType(rel, depRel, attTup);
 
     heap_close(depRel, RowExclusiveLock);
 
@@ -12092,7 +12306,7 @@ static void ATExecAlterColumnType(AlteredTableInfo* tab, Relation rel, AlterTabl
          */
         RemoveAttrDefault(RelationGetRelid(rel), attnum, DROP_RESTRICT, true, true);
 
-        StoreAttrDefault(rel, attnum, defaultexpr);
+        StoreAttrDefault(rel, attnum, defaultexpr, generatedCol);
     }
 
     /* Cleanup */
@@ -13028,7 +13242,7 @@ static void change_owner_fix_column_acls(Oid relationOid, Oid oldOwnerId, Oid ne
 
     attRelation = heap_open(AttributeRelationId, RowExclusiveLock);
     ScanKeyInit(&key[0], Anum_pg_attribute_attrelid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(relationOid));
-    scan = systable_beginscan(attRelation, AttributeRelidNumIndexId, true, SnapshotNow, 1, key);
+    scan = systable_beginscan(attRelation, AttributeRelidNumIndexId, true, NULL, 1, key);
     while (HeapTupleIsValid(attributeTuple = systable_getnext(scan))) {
         Form_pg_attribute att = (Form_pg_attribute)GETSTRUCT(attributeTuple);
         Datum repl_val[Natts_pg_attribute];
@@ -13093,7 +13307,7 @@ static void change_owner_recurse_to_sequences(Oid relationOid, Oid newOwnerId, L
         &key[0], Anum_pg_depend_refclassid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationRelationId));
     ScanKeyInit(&key[1], Anum_pg_depend_refobjid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(relationOid));
     /* we leave refobjsubid unspecified */
-    scan = systable_beginscan(depRel, DependReferenceIndexId, true, SnapshotNow, 2, key);
+    scan = systable_beginscan(depRel, DependReferenceIndexId, true, NULL, 2, key);
 
     while (HeapTupleIsValid(tup = systable_getnext(scan))) {
         Form_pg_depend depForm = (Form_pg_depend)GETSTRUCT(tup);
@@ -14506,7 +14720,7 @@ static void ATExecAddInherit(Relation child_rel, RangeVar* parent, LOCKMODE lock
     catalogRelation = heap_open(InheritsRelationId, RowExclusiveLock);
     ScanKeyInit(
         &key, Anum_pg_inherits_inhrelid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationGetRelid(child_rel)));
-    scan = systable_beginscan(catalogRelation, InheritsRelidSeqnoIndexId, true, SnapshotNow, 1, &key);
+    scan = systable_beginscan(catalogRelation, InheritsRelidSeqnoIndexId, true, NULL, 1, &key);
 
     /* inhseqno sequences start at 1 */
     inhseqno = 0;
@@ -14727,7 +14941,7 @@ static void MergeConstraintsIntoExisting(Relation child_rel, Relation parent_rel
         BTEqualStrategyNumber,
         F_OIDEQ,
         ObjectIdGetDatum(RelationGetRelid(parent_rel)));
-    parent_scan = systable_beginscan(catalog_relation, ConstraintRelidIndexId, true, SnapshotNow, 1, &parent_key);
+    parent_scan = systable_beginscan(catalog_relation, ConstraintRelidIndexId, true, NULL, 1, &parent_key);
 
     while (HeapTupleIsValid(parent_tuple = systable_getnext(parent_scan))) {
         Form_pg_constraint parent_con = (Form_pg_constraint)GETSTRUCT(parent_tuple);
@@ -14749,7 +14963,7 @@ static void MergeConstraintsIntoExisting(Relation child_rel, Relation parent_rel
             BTEqualStrategyNumber,
             F_OIDEQ,
             ObjectIdGetDatum(RelationGetRelid(child_rel)));
-        child_scan = systable_beginscan(catalog_relation, ConstraintRelidIndexId, true, SnapshotNow, 1, &child_key);
+        child_scan = systable_beginscan(catalog_relation, ConstraintRelidIndexId, true, NULL, 1, &child_key);
 
         while (HeapTupleIsValid(child_tuple = systable_getnext(child_scan))) {
             Form_pg_constraint child_con = (Form_pg_constraint)GETSTRUCT(child_tuple);
@@ -14847,7 +15061,7 @@ static void ATExecDropInherit(Relation rel, RangeVar* parent, LOCKMODE lockmode)
     catalogRelation = heap_open(InheritsRelationId, RowExclusiveLock);
     ScanKeyInit(
         &key[0], Anum_pg_inherits_inhrelid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationGetRelid(rel)));
-    scan = systable_beginscan(catalogRelation, InheritsRelidSeqnoIndexId, true, SnapshotNow, 1, key);
+    scan = systable_beginscan(catalogRelation, InheritsRelidSeqnoIndexId, true, NULL, 1, key);
 
     while (HeapTupleIsValid(inheritsTuple = systable_getnext(scan))) {
         Oid inhparent;
@@ -14876,7 +15090,7 @@ static void ATExecDropInherit(Relation rel, RangeVar* parent, LOCKMODE lockmode)
     catalogRelation = heap_open(AttributeRelationId, RowExclusiveLock);
     ScanKeyInit(
         &key[0], Anum_pg_attribute_attrelid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationGetRelid(rel)));
-    scan = systable_beginscan(catalogRelation, AttributeRelidNumIndexId, true, SnapshotNow, 1, key);
+    scan = systable_beginscan(catalogRelation, AttributeRelidNumIndexId, true, NULL, 1, key);
     while (HeapTupleIsValid(attributeTuple = systable_getnext(scan))) {
         Form_pg_attribute att = (Form_pg_attribute)GETSTRUCT(attributeTuple);
 
@@ -14915,7 +15129,7 @@ static void ATExecDropInherit(Relation rel, RangeVar* parent, LOCKMODE lockmode)
         BTEqualStrategyNumber,
         F_OIDEQ,
         ObjectIdGetDatum(RelationGetRelid(parent_rel)));
-    scan = systable_beginscan(catalogRelation, ConstraintRelidIndexId, true, SnapshotNow, 1, key);
+    scan = systable_beginscan(catalogRelation, ConstraintRelidIndexId, true, NULL, 1, key);
 
     connames = NIL;
 
@@ -14931,7 +15145,7 @@ static void ATExecDropInherit(Relation rel, RangeVar* parent, LOCKMODE lockmode)
     /* Now scan the child's constraints */
     ScanKeyInit(
         &key[0], Anum_pg_constraint_conrelid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationGetRelid(rel)));
-    scan = systable_beginscan(catalogRelation, ConstraintRelidIndexId, true, SnapshotNow, 1, key);
+    scan = systable_beginscan(catalogRelation, ConstraintRelidIndexId, true, NULL, 1, key);
 
     while (HeapTupleIsValid(constraintTuple = systable_getnext(scan))) {
         Form_pg_constraint con = (Form_pg_constraint)GETSTRUCT(constraintTuple);
@@ -15000,7 +15214,7 @@ static void drop_parent_dependency(Oid relid, Oid refclassid, Oid refobjid)
     ScanKeyInit(&key[1], Anum_pg_depend_objid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(relid));
     ScanKeyInit(&key[2], Anum_pg_depend_objsubid, BTEqualStrategyNumber, F_INT4EQ, Int32GetDatum(0));
 
-    scan = systable_beginscan(catalogRelation, DependDependerIndexId, true, SnapshotNow, 3, key);
+    scan = systable_beginscan(catalogRelation, DependDependerIndexId, true, NULL, 3, key);
 
     while (HeapTupleIsValid(depTuple = systable_getnext(scan))) {
         Form_pg_depend dep = (Form_pg_depend)GETSTRUCT(depTuple);
@@ -15050,7 +15264,7 @@ static void ATExecAddOf(Relation rel, const TypeName* ofTypename, LOCKMODE lockm
     /* Fail if the table has any inheritance parents. */
     inheritsRelation = heap_open(InheritsRelationId, AccessShareLock);
     ScanKeyInit(&key, Anum_pg_inherits_inhrelid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(relid));
-    scan = systable_beginscan(inheritsRelation, InheritsRelidSeqnoIndexId, true, SnapshotNow, 1, &key);
+    scan = systable_beginscan(inheritsRelation, InheritsRelidSeqnoIndexId, true, NULL, 1, &key);
     if (HeapTupleIsValid(systable_getnext(scan)))
         ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE), errmsg("typed tables cannot inherit")));
     systable_endscan(scan);
@@ -16361,7 +16575,7 @@ static void AlterSeqNamespaces(
     ScanKeyInit(
         &key[1], Anum_pg_depend_refobjid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationGetRelid(rel)));
     /* we leave refobjsubid unspecified */
-    scan = systable_beginscan(depRel, DependReferenceIndexId, true, SnapshotNow, 2, key);
+    scan = systable_beginscan(depRel, DependReferenceIndexId, true, NULL, 2, key);
 
     while (HeapTupleIsValid(tup = systable_getnext(scan))) {
         Form_pg_depend depForm = (Form_pg_depend)GETSTRUCT(tup);
@@ -16888,37 +17102,43 @@ List* GetPartitionkeyPos(List* partitionkeys, List* schema)
 {
     ListCell* partitionkey_cell = NULL;
     ListCell* schema_cell = NULL;
-    ColumnRef* partitionkey_ref = NULL;
-    ColumnDef* schema_def = NULL;
     int column_count = 0;
-    bool* is_exist = NULL;
-    char* partitonkey_name = NULL;
     List* pos = NULL;
-    int len = -1;
 
     if (schema == NIL) {
         ereport(ERROR, (errcode(ERRCODE_INVALID_OPERATION), errmsg("there is no column for a partitioned table!")));
     }
 
-    len = schema->length;
+    int len = schema->length;
     if (partitionkeys == NIL) {
         ereport(ERROR, (errcode(ERRCODE_INVALID_OPERATION), errmsg("there is no partition key!")));
     }
 
-    is_exist = (bool*)palloc(len * sizeof(bool));
+    bool* is_exist = (bool*)palloc(len * sizeof(bool));
     errno_t rc = EOK;
     rc = memset_s(is_exist, len * sizeof(bool), 0, len * sizeof(bool));
     securec_check(rc, "\0", "\0");
 
     foreach (partitionkey_cell, partitionkeys) {
-        partitionkey_ref = (ColumnRef*)lfirst(partitionkey_cell);
-        partitonkey_name = ((Value*)linitial(partitionkey_ref->fields))->val.str;
+        ColumnRef* partitionkey_ref = (ColumnRef*)lfirst(partitionkey_cell);
+        char* partitonkey_name = ((Value*)linitial(partitionkey_ref->fields))->val.str;
 
         foreach (schema_cell, schema) {
-            schema_def = (ColumnDef*)lfirst(schema_cell);
+            ColumnDef* schema_def = (ColumnDef*)lfirst(schema_cell);
 
             /* find the column that has the same name as the partitionkey */
             if (!strcmp(partitonkey_name, schema_def->colname)) {
+
+                /*
+                 * Generated columns cannot work: They are computed after BEFORE
+                 * triggers, but partition routing is done before all triggers.
+                 */
+                if (schema_def->generatedCol) {
+                    ereport(ERROR, (errmodule(MOD_GEN_COL), errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+                        errmsg("cannot use generated column in partition key"),
+                        errdetail("Column \"%s\" is a generated column.", partitonkey_name)));
+                }
+
                 /* duplicate partitionkey name */
                 if (is_exist != NULL && is_exist[column_count]) {
                     pfree_ext(is_exist);
@@ -19886,7 +20106,7 @@ static void checkColumnForExchange(Relation partTableRel, Relation ordTableRel)
         ScanKeyInit(&scankeys[1], Anum_pg_attrdef_adnum, BTEqualStrategyNumber, F_INT2EQ,
             partVals[Anum_pg_attribute_attnum - 1]);
 
-        partAttrdefScan = systable_beginscan(attrdefRel, AttrDefaultIndexId, true, SnapshotNow, 2, scankeys);
+        partAttrdefScan = systable_beginscan(attrdefRel, AttrDefaultIndexId, true, NULL, 2, scankeys);
         partAttrdefTuple = systable_getnext(partAttrdefScan);
 
         ScanKeyInit(&scankeys[0],
@@ -19897,7 +20117,7 @@ static void checkColumnForExchange(Relation partTableRel, Relation ordTableRel)
         ScanKeyInit(&scankeys[1], Anum_pg_attrdef_adnum, BTEqualStrategyNumber, F_INT2EQ,
             ordVals[Anum_pg_attribute_attnum - 1]);
 
-        ordAttrdefScan = systable_beginscan(attrdefRel, AttrDefaultIndexId, true, SnapshotNow, 2, scankeys);
+        ordAttrdefScan = systable_beginscan(attrdefRel, AttrDefaultIndexId, true, NULL, 2, scankeys);
         ordAttrdefTuple = systable_getnext(ordAttrdefScan);
 
         if ((partAttrdefTuple != NULL) && (ordAttrdefTuple != NULL)) {
@@ -19974,7 +20194,7 @@ bool checkPartitionLocalIndexesUsable(Oid partitionOid)
     pg_part_rel = relation_open(PartitionRelationId, AccessShareLock);
     ScanKeyInit(
         &scankeys[0], Anum_pg_partition_indextblid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(partitionOid));
-    partScan = systable_beginscan(pg_part_rel, PartitionIndexTableIdIndexId, true, SnapshotNow, 1, scankeys);
+    partScan = systable_beginscan(pg_part_rel, PartitionIndexTableIdIndexId, true, NULL, 1, scankeys);
     while (NULL != (partTuple = systable_getnext(partScan))) {
         Relation indexRel = NULL;
         Partition indexPart = NULL;
@@ -20021,7 +20241,7 @@ bool checkRelationLocalIndexesUsable(Relation relation)
         &skey, Anum_pg_index_indrelid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(RelationGetRelid(relation)));
 
     indrel = heap_open(IndexRelationId, AccessShareLock);
-    indscan = systable_beginscan(indrel, IndexIndrelidIndexId, true, SnapshotNow, 1, &skey);
+    indscan = systable_beginscan(indrel, IndexIndrelidIndexId, true, NULL, 1, &skey);
 
     while (HeapTupleIsValid(htup = systable_getnext(indscan))) {
         Form_pg_index index = (Form_pg_index)GETSTRUCT(htup);
@@ -20199,11 +20419,11 @@ static List* getConstraintList(Oid relOid, char conType)
     if (conType != CONSTRAINT_INVALID) {
         ScanKeyInit(&skey[1], Anum_pg_constraint_contype, BTEqualStrategyNumber, F_CHAREQ, CharGetDatum(conType));
         nkeys = 2;
-        scan = systable_beginscan(pgConstraint, ConstraintRelidIndexId, false, SnapshotNow, nkeys, skey);
+        scan = systable_beginscan(pgConstraint, ConstraintRelidIndexId, false, NULL, nkeys, skey);
 
     } else {
         nkeys = 1;
-        scan = systable_beginscan(pgConstraint, ConstraintRelidIndexId, true, SnapshotNow, nkeys, skey);
+        scan = systable_beginscan(pgConstraint, ConstraintRelidIndexId, true, NULL, nkeys, skey);
     }
 
     while (HeapTupleIsValid(tuple = systable_getnext(scan))) {
@@ -22764,10 +22984,12 @@ static void ExecOnlyTestRowTable(AlteredTableInfo* tab)
  */
 static void ExecOnlyTestCStoreTable(AlteredTableInfo* tab)
 {
-    ereport(ERROR,
-        (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-            errmsg("Un-support feature"),
-            errdetail("column stored relation doesn't support this feature")));
+    ForbidToRewriteOrTestCstoreIndex(tab);
+
+    Relation rel = heap_open(tab->relid, NoLock);
+    ATOnlyCheckCStoreTable(tab, rel);
+    heap_close(rel, NoLock);
+    return;
 }
 
 /**
@@ -22893,10 +23115,28 @@ static void ExecOnlyTestRowPartitionedTable(AlteredTableInfo* tab)
  */
 static void ExecOnlyTestCStorePartitionedTable(AlteredTableInfo* tab)
 {
-    ereport(ERROR,
-        (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-            errmsg("Un-support feature"),
-            errdetail("column stored relation doesn't support this feature")));
+    Relation partRel = NULL;
+    Partition partition = NULL;
+    ListCell* cell = NULL;
+    Relation partitionedTableRel = NULL;
+    List* partitions = NULL;
+
+    ForbidToRewriteOrTestCstoreIndex(tab);
+
+    /* get all partitions of target partitioned table */
+    partitionedTableRel = heap_open(tab->relid, NoLock);
+    partitions = relationGetPartitionList(partitionedTableRel, NoLock);
+
+    foreach (cell, partitions) {
+        partition = (Partition)lfirst(cell);
+        partRel = partitionGetRelation(partitionedTableRel, partition);
+        /* check each partition */
+        ATOnlyCheckCStoreTable(tab, partRel);
+        releaseDummyRelation(&partRel);
+    }
+
+    releasePartitionList(partitionedTableRel, &partitions, NoLock);
+    heap_close(partitionedTableRel, NoLock);
 }
 
 /*
@@ -23300,7 +23540,7 @@ static void ResetPartsRedisCtidRelOptions(Relation rel)
     ScanKeyInit(&key[1], Anum_pg_partition_parentid, BTEqualStrategyNumber,F_OIDEQ, 
         ObjectIdGetDatum(RelationGetRelid(rel)));
 
-    scan = systable_beginscan(pg_partition, PartitionParentOidIndexId, true, SnapshotNow, 2, key);
+    scan = systable_beginscan(pg_partition, PartitionParentOidIndexId, true, NULL, 2, key);
     redis_reloptions = AlterTableSetRedistribute(rel, REDIS_REL_RESET_CTID, NULL);
     while (HeapTupleIsValid(tuple = systable_getnext(scan))) {
         HeapTuple dtuple;

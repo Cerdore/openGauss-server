@@ -86,6 +86,7 @@ int StreamMain()
     int curTryCounter;
     int* oldTryCounter = NULL;
     if (sigsetjmp(local_sigjmp_buf, 1) != 0) {
+	t_thrd.int_cxt.ignoreBackendSignal = false;
         /* reset STP thread local valueables */
         stp_reset_opt_values();
 
@@ -102,7 +103,9 @@ int StreamMain()
     
     MemoryContext oldMemory = MemoryContextSwitchTo(
         THREAD_GET_MEM_CXT_GROUP(MEMORY_CONTEXT_EXECUTOR));
+#ifdef ENABLE_LLVM_COMPILE
     CodeGenThreadInitialize();
+#endif
     (void)MemoryContextSwitchTo(oldMemory);
     
     /* We can now handle ereport(ERROR) */
@@ -606,6 +609,8 @@ void ResetStreamEnv()
     t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->initMemInChunks = t_thrd.utils_cxt.trackedMemChunks;
     t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->queryMemInChunks = t_thrd.utils_cxt.trackedMemChunks;
     t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->peakChunksQuery = t_thrd.utils_cxt.trackedMemChunks;
+    t_thrd.utils_cxt.peakedBytesInQueryLifeCycle = 0;
+    t_thrd.utils_cxt.basedBytesInQueryLifeCycle = 0;
     t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->spillCount = 0;
     t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->spillSize = 0;
     t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->broadcastSize = 0;

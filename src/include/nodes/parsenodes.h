@@ -342,6 +342,7 @@ typedef struct RangeTblEntry {
     bool isexcluded; /* the rel is the EXCLUDED relation for UPSERT */
     /* For sublink in targetlist pull up */
     bool sublink_pull_up;       /* mark the subquery is sublink pulled up */
+    Bitmapset *extraUpdatedCols; /* generated columns being updated */
 } RangeTblEntry;
 
 /*
@@ -705,7 +706,8 @@ typedef struct RangePartitionindexDefState {
  */
 
 #define CSTORE_SUPPORT_CONSTRAINT(type) \
-    ((type) == CONSTR_NULL || (type) == CONSTR_NOTNULL || (type) == CONSTR_DEFAULT || (type) == CONSTR_CLUSTER)
+    ((type) == CONSTR_NULL || (type) == CONSTR_NOTNULL || (type) == CONSTR_DEFAULT || \
+     (type) == CONSTR_CLUSTER || (type) == CONSTR_PRIMARY || (type) == CONSTR_UNIQUE)
 
 #define GetConstraintType(type)                \
     ({                                         \
@@ -749,6 +751,9 @@ typedef struct RangePartitionindexDefState {
                 break;                         \
             case CONSTR_ATTR_IMMEDIATE:        \
                 tname = "ATTR IMMEDIATE";      \
+                break;                         \
+            case CONSTR_GENERATED:             \
+                tname = "GENERATED COL";       \
                 break;                         \
         }                                      \
         tname;                                 \

@@ -771,6 +771,7 @@ void client_read_ended(void)
     }
 }
 
+
 /*
  * Do raw parsing (only).
  *
@@ -796,7 +797,16 @@ List* pg_parse_query(const char* query_string, List** query_string_locationlist)
 
     PGSTAT_START_TIME_RECORD();
 
-    raw_parsetree_list = raw_parser(query_string, query_string_locationlist);
+    List* (*parser_hook)(const char*, List**) = raw_parser;
+#ifndef ENABLE_MULTIPLE_NODES
+    if (u_sess->attr.attr_sql.enable_custom_parser) {
+        int id = GetCustomParserId();
+        if (id >= 0 && g_instance.raw_parser_hook[id] != NULL) {
+            parser_hook = (List* (*)(const char*, List**))g_instance.raw_parser_hook[id];
+        }
+    }
+#endif
+    raw_parsetree_list = parser_hook(query_string, query_string_locationlist);
 
     PGSTAT_END_TIME_RECORD(PARSE_TIME);
 
@@ -3169,6 +3179,40 @@ static void exec_parse_message(const char* query_string, /* string to execute */
     if (ENABLE_DN_GPC)
         CleanSessGPCPtr(u_sess);
 
+    is_named = (stmt_name[0] != '\0');
+    if (ENABLE_GPC) {
+        CachedPlanSource * plansource = g_instance.plan_cache->Fetch(query_string, strlen(query_string),
+                                                                     numParams, NULL);
+        if (plansource != NULL) {
+            bool hasGetLock = false;
+            if (is_named) {
+                if (ENABLE_CN_GPC)
+                    StorePreparedStatementCNGPC(stmt_name, plansource, false, true);
+                else {
+                    u_sess->pcache_cxt.cur_stmt_psrc = plansource;
+                    if (g_instance.plan_cache->CheckRecreateCachePlan(plansource, &hasGetLock))
+                        g_instance.plan_cache->RecreateCachePlan(plansource, stmt_name, NULL, NULL, NULL, hasGetLock);
+                }
+                goto pass_parsing;
+            } else {
+                if (ENABLE_DN_GPC)
+                    u_sess->pcache_cxt.private_refcount--;
+                if (!g_instance.plan_cache->CheckRecreateCachePlan(plansource, &hasGetLock)) {
+                    drop_unnamed_stmt();
+                    u_sess->pcache_cxt.unnamed_stmt_psrc = plansource;
+                    goto pass_parsing;
+                } else {
+                    plansource->gpc.status.SubRefCount();
+                    if (hasGetLock) {
+                        AcquirePlannerLocks(plansource->query_list, false);
+                        if (plansource->gplan) {
+                            AcquireExecutorLocks(plansource->gplan->stmt_list, false);
+                        }
+                    }
+                }
+            }
+        }
+    }
     /*
      * Switch to appropriate context for constructing parsetrees.
      *
@@ -3183,24 +3227,7 @@ static void exec_parse_message(const char* query_string, /* string to execute */
      * So in this case, we create the plancache entry's query_context here,
      * and do all the parsing work therein.
      */
-    is_named = (stmt_name[0] != '\0');
     if (is_named) {
-        if (ENABLE_GPC) {
-            CachedPlanSource * plansource = g_instance.plan_cache->Fetch(query_string, strlen(query_string),
-                                                                         numParams, NULL);
-
-            if (plansource != NULL) {
-                if (ENABLE_CN_GPC)
-                    StorePreparedStatementCNGPC(stmt_name, plansource, false, true);
-                else {
-                    u_sess->pcache_cxt.cur_stmt_psrc = plansource;
-                    if (g_instance.plan_cache->CheckRecreateCachePlan(plansource))
-                        g_instance.plan_cache->RecreateCachePlan(plansource, stmt_name, NULL, NULL, NULL);
-                }
-                goto pass_parsing;
-            }
-        }
-
         /* Named prepared statement --- parse in u_sess->parser_cxt.temp_parse_message_context */
         oldcontext = MemoryContextSwitchTo(u_sess->temp_mem_cxt);
     } else {
@@ -3371,7 +3398,14 @@ static void exec_parse_message(const char* query_string, /* string to execute */
         if (u_sess->attr.attr_common.log_parser_stats)
             ShowUsage("PARSE ANALYSIS STATISTICS");
 
+#ifndef ENABLE_MULTIPLE_NODES
+        /* store normalized uniquesQl text into Query in P phase of PBE, only if auto-cleanup is enabled */
+        if (is_unique_sql_enabled() && g_instance.attr.attr_common.enable_auto_clean_unique_sql) {
+            query->unique_sql_text = FindCurrentUniqueSQL();
+        }
+#endif
         querytree_list = pg_rewrite_query(query);
+
 #ifdef ENABLE_MULTIPLE_NODES
         if (IS_PGXC_COORDINATOR && !IsConnFromCoord()) {
             ListCell* lc = NULL;
@@ -4189,6 +4223,7 @@ static void exec_bind_message(StringInfo input_message)
         /* save the cursor in case of error */
         int msg_cursor = input_message->cursor;
         int nodeIdx = getSingleNodeIdx(input_message, psrc, stmt_name);
+        bool enable_unamed_gpc = psrc->gpc.status.InShareTable() && stmt_name[0] == '\0';
         if (nodeIdx != -1) {
             lightProxy* scn = NULL;
             bool enable_gpc = (ENABLE_CN_GPC && stmt_name[0] != '\0');
@@ -4205,7 +4240,12 @@ static void exec_bind_message(StringInfo input_message)
                 if (enable_gpc) {
                     scn->storeLpByStmtName(stmt_name);
                     psrc->lightProxyObj = NULL;
+                } else if (enable_unamed_gpc) {
+                    Assert(u_sess->pcache_cxt.unnamed_gpc_lp == NULL);
+                    Assert(psrc->lightProxyObj == NULL);
+                    u_sess->pcache_cxt.unnamed_gpc_lp = scn;
                 } else {
+                    Assert(!enable_unamed_gpc);
                     psrc->lightProxyObj = scn;
                 }
             } else {
@@ -4892,6 +4932,9 @@ static void exec_execute_message(const char* portal_name, long max_rows)
             break;
     }
 
+    if(MEMORY_TRACKING_QUERY_PEAK)
+        ereport(LOG, (errmsg("execute portal %s, peak memory %ld(kb)", sourceText,  (int64)(t_thrd.utils_cxt.peakedBytesInQueryLifeCycle/1024))));
+
     if (save_log_statement_stats)
         ShowUsage("EXECUTE MESSAGE STATISTICS");
 
@@ -5391,12 +5434,28 @@ static void drop_unnamed_stmt(void)
     if (u_sess->pcache_cxt.unnamed_stmt_psrc) {
         CachedPlanSource* psrc = u_sess->pcache_cxt.unnamed_stmt_psrc;
         u_sess->pcache_cxt.unnamed_stmt_psrc = NULL;
-        if (ENABLE_GPC) {
-            GPC_LOG("drop private plansource", psrc, psrc->stmt_name);
-        }
-        DropCachedPlan(psrc);
-        if (ENABLE_GPC) {
-            GPC_LOG("drop private plansource end", psrc, 0);
+        if (psrc->gpc.status.InShareTable()) {
+            /* drop unnamed lightproxy */
+            if (u_sess->pcache_cxt.unnamed_gpc_lp) {
+                lightProxy* lp = u_sess->pcache_cxt.unnamed_gpc_lp;
+                u_sess->pcache_cxt.unnamed_gpc_lp = NULL;
+                Assert(lp->m_cplan == psrc);
+                Assert(lp->m_stmtName == NULL || lp->m_stmtName[0] == '\0');
+                if (lp->m_portalName == NULL || lightProxy::locateLightProxy(lp->m_portalName) == NULL) {
+                    lightProxy::tearDown(lp);
+                }
+            }
+            GPC_LOG("delete shared unnamed plansource", psrc, psrc->stmt_name);
+            psrc->gpc.status.SubRefCount();
+        } else {
+            Assert(u_sess->pcache_cxt.unnamed_gpc_lp == NULL);
+            if (ENABLE_GPC) {
+                GPC_LOG("drop private plansource", psrc, psrc->stmt_name);
+            }
+            DropCachedPlan(psrc);
+            if (ENABLE_GPC) {
+                GPC_LOG("drop private plansource end", psrc, 0);
+            }
         }
     }
 }
@@ -5414,6 +5473,9 @@ static void drop_unnamed_stmt(void)
  */
 void quickdie(SIGNAL_ARGS)
 {
+    if (t_thrd.int_cxt.ignoreBackendSignal) {
+        return;
+    }
     sigaddset(&t_thrd.libpq_cxt.BlockSig, SIGQUIT); /* prevent nested calls */
     gs_signal_setmask(&t_thrd.libpq_cxt.BlockSig, NULL);
 
@@ -5467,6 +5529,9 @@ void quickdie(SIGNAL_ARGS)
  */
 void die(SIGNAL_ARGS)
 {
+    if (t_thrd.int_cxt.ignoreBackendSignal) {
+        return;
+    }
     int save_errno = errno;
 
     /* Don't joggle the elbow of proc_exit */
@@ -5516,6 +5581,9 @@ void die(SIGNAL_ARGS)
  */
 void StatementCancelHandler(SIGNAL_ARGS)
 {
+    if (t_thrd.int_cxt.ignoreBackendSignal) {
+        return;
+    }
     int save_errno = errno;
 
     /*
@@ -6757,8 +6825,6 @@ void RemoveTempNamespace()
         {
             StringInfoData str;
             initStringInfo(&str);
-            StringInfoData str_temp_table;
-            initStringInfo(&str_temp_table);
 
             if (u_sess->catalog_cxt.myTempNamespace) {
                 ResourceOwner currentOwner = t_thrd.utils_cxt.CurrentResourceOwner;
@@ -6778,13 +6844,11 @@ void RemoveTempNamespace()
                 if (nspname != NULL) {
                     ereport(LOG, (errmsg("Session quiting, drop temp schema %s", nspname)));
                     appendStringInfo(&str, "DROP SCHEMA %s, pg_toast_temp_%s CASCADE", nspname, &nspname[8]);
-                    appendStringInfo(&str_temp_table, "DELETE FROM gs_encrypted_columns WHERE rel_id in ( select pg_class.oid from pg_class join pg_namespace ON (pg_class.relnamespace = pg_namespace.oid ) where pg_namespace.nspname = \'%s\')", nspname);
 
                     pgstatCountSQL4SessionLevel();
 
                     t_thrd.postgres_cxt.whereToSendOutput = DestNone;
                     exec_simple_query(str.data, QUERY_MESSAGE);
-                    exec_simple_query(str_temp_table.data, QUERY_MESSAGE);
                     u_sess->catalog_cxt.myTempNamespace = InvalidOid;
                     u_sess->catalog_cxt.myTempToastNamespace = InvalidOid;
                 }
@@ -6914,6 +6978,7 @@ int PostgresMain(int argc, char* argv[], const char* dbname, const char* usernam
             gstrace_exit(GS_TRC_ID_PostgresMain);
             proc_exit(1);
         }
+        InitializeNumLwLockPartitions();
     }
 
     /* initialize guc variables which need to be sended to stream threads */
@@ -7266,6 +7331,7 @@ int PostgresMain(int argc, char* argv[], const char* dbname, const char* usernam
     int curTryCounter;
     int* oldTryCounter = NULL;
     if (sigsetjmp(local_sigjmp_buf, 1) != 0) {
+	t_thrd.int_cxt.ignoreBackendSignal = false;
         gstrace_tryblock_exit(true, oldTryCounter);
         Assert(t_thrd.proc->dw_pos == -1);
 
@@ -7377,6 +7443,7 @@ int PostgresMain(int argc, char* argv[], const char* dbname, const char* usernam
             }
         }
 
+        u_sess->pcache_cxt.gpc_in_batch = false;
         u_sess->pcache_cxt.gpc_in_try_store = false;
 
         OpFusion::tearDown(u_sess->exec_cxt.CurrentOpFusionObj);
@@ -7758,7 +7825,15 @@ int PostgresMain(int argc, char* argv[], const char* dbname, const char* usernam
 #ifdef ENABLE_MULTIPLE_NODES
         // reset some flag related to stream
         ResetStreamEnv();
+#else
+        t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->initMemInChunks = t_thrd.utils_cxt.trackedMemChunks;
+        t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->queryMemInChunks = t_thrd.utils_cxt.trackedMemChunks;
+        t_thrd.shemem_ptr_cxt.mySessionMemoryEntry->peakChunksQuery = t_thrd.utils_cxt.trackedMemChunks;
+        t_thrd.utils_cxt.peakedBytesInQueryLifeCycle = 0;
+        t_thrd.utils_cxt.basedBytesInQueryLifeCycle = 0;
 #endif
+
+
         t_thrd.codegen_cxt.codegen_IRload_thr_count = 0;
         IsExplainPlanStmt = false;
         t_thrd.codegen_cxt.g_runningInFmgr = false;
@@ -7767,7 +7842,9 @@ int PostgresMain(int argc, char* argv[], const char* dbname, const char* usernam
         u_sess->attr.attr_sql.explain_allow_multinode = false;
         MemoryContext oldMemory =
             MemoryContextSwitchTo(THREAD_GET_MEM_CXT_GROUP(MEMORY_CONTEXT_EXECUTOR));
+#ifdef ENABLE_LLVM_COMPILE
         CodeGenThreadInitialize();
+#endif
         (void)MemoryContextSwitchTo(oldMemory);
         u_sess->exec_cxt.single_shard_stmt = false;
         /* Set statement_timestamp */
@@ -7895,6 +7972,9 @@ int PostgresMain(int argc, char* argv[], const char* dbname, const char* usernam
                 }
 #endif
                 exec_simple_query(query_string, QUERY_MESSAGE, &input_message); /* @hdfs Add the second parameter */
+
+                if(MEMORY_TRACKING_QUERY_PEAK)
+                    ereport(LOG, (errmsg("query_string %s, peak memory %ld(kb)", query_string,  (int64)(t_thrd.utils_cxt.peakedBytesInQueryLifeCycle/1024))));
                 u_sess->debug_query_id = 0;
                 send_ready_for_query = true;
             } break;
@@ -8266,6 +8346,8 @@ int PostgresMain(int argc, char* argv[], const char* dbname, const char* usernam
                             pq_putemptymessage('s');
                     }
                     pfree_ext(completionTag);
+                    if(MEMORY_TRACKING_QUERY_PEAK)
+                        ereport(LOG, (errmsg("execute opfusion,  peak memory %ld(kb)",  (int64)(t_thrd.utils_cxt.peakedBytesInQueryLifeCycle/1024))));
                     break;
                 }
                 pfree_ext(completionTag);
@@ -8407,6 +8489,7 @@ int PostgresMain(int argc, char* argv[], const char* dbname, const char* usernam
                             OpFusion* curr = OpFusion::locateFusion(closeTarget);
                             if (curr != NULL) {
                                 if (curr->IsGlobal()) {
+                                    curr->clean();
                                     OpFusion::tearDown(curr);
                                 } else {
                                     curr->clean();
@@ -9787,10 +9870,11 @@ static void exec_one_in_batch(CachedPlanSource* psrc, ParamListInfo params, int 
 
     DestReceiver* receiver = NULL;
     bool completed = false;
+    bool hasGetLock = false;
 
     if (ENABLE_GPC && psrc->stmt_name && psrc->stmt_name[0] != '\0' &&
-        g_instance.plan_cache->CheckRecreateCachePlan(psrc)) {
-        g_instance.plan_cache->RecreateCachePlan(psrc, stmt_name, pstmt, NULL, NULL);
+        g_instance.plan_cache->CheckRecreateCachePlan(psrc, &hasGetLock)) {
+        g_instance.plan_cache->RecreateCachePlan(psrc, stmt_name, pstmt, NULL, NULL, hasGetLock);
 #ifdef ENABLE_MULTIPLE_NODES
         psrc = IS_PGXC_DATANODE ? u_sess->pcache_cxt.cur_stmt_psrc : pstmt->plansource;
 #else
@@ -10329,6 +10413,8 @@ static void exec_batch_bind_execute(StringInfo input_message)
     /* E message */
     const char* exec_portal_name = NULL;
     int max_rows;
+    /* reset gpc batch flag */
+    u_sess->pcache_cxt.gpc_in_batch = false;
 
     /*
      * Only support normal perf mode for PBE, as DestRemoteExecute can not send T message automatically.
@@ -10549,7 +10635,7 @@ static void exec_batch_bind_execute(StringInfo input_message)
     }
 
     /* Make sure the querytree list is valid and we have parse-time locks */
-    if (!ENABLE_CN_GPC && psrc->single_exec_node != NULL)
+    if (psrc->single_exec_node != NULL)
         RevalidateCachedQuery(psrc);
 
     /* record the params set position for light cn to contruct batch message */
@@ -10871,6 +10957,7 @@ static void exec_batch_bind_execute(StringInfo input_message)
         /* 3.run for each dn */
         lightProxy *scn = NULL;
         bool enable_gpc = (ENABLE_CN_GPC && stmt_name[0] != '\0');
+        bool enable_unamed_gpc = psrc->gpc.status.InShareTable() && stmt_name[0] == '\0';
         if (enable_gpc)
             scn = lightProxy::locateLpByStmtName(stmt_name);
         else
@@ -10884,9 +10971,15 @@ static void exec_batch_bind_execute(StringInfo input_message)
             if (enable_gpc) {
                 scn->storeLpByStmtName(stmt_name);
                 psrc->lightProxyObj = NULL;
+            } else if (enable_unamed_gpc) {
+                Assert(u_sess->pcache_cxt.unnamed_gpc_lp == NULL);
+                Assert(psrc->lightProxyObj == NULL);
+                u_sess->pcache_cxt.unnamed_gpc_lp = scn;
             } else {
                 psrc->lightProxyObj = scn;
             }
+        } else {
+            Assert(!enable_unamed_gpc);
         }
         if (enable_gpc) {
             /* cngpc need fill gpc msg just like BuildCachedPlan. */
@@ -10914,6 +11007,7 @@ static void exec_batch_bind_execute(StringInfo input_message)
                 if (ENABLE_GPC && stmt_name[0] != '\0') {
 #ifdef ENABLE_MULTIPLE_NODES
                     psrc = IS_PGXC_DATANODE ? u_sess->pcache_cxt.cur_stmt_psrc : pstmt->plansource;
+                    u_sess->pcache_cxt.gpc_in_batch = true;
 #else
                     psrc = pstmt->plansource;
 #endif
@@ -10932,6 +11026,7 @@ static void exec_batch_bind_execute(StringInfo input_message)
                 if (ENABLE_GPC && stmt_name[0] != '\0') {
 #ifdef ENABLE_MULTIPLE_NODES
                     psrc = IS_PGXC_DATANODE ? u_sess->pcache_cxt.cur_stmt_psrc : pstmt->plansource;
+                    u_sess->pcache_cxt.gpc_in_batch = true;
 #else
                     psrc = pstmt->plansource;
 #endif
@@ -10955,6 +11050,8 @@ static void exec_batch_bind_execute(StringInfo input_message)
 
         pfree(completionTag);
     }
+    /* end batch, reset gpc batch flag */
+    u_sess->pcache_cxt.gpc_in_batch = false;
 
     /* Done with the snapshot used */
     if (snapshot_set)
@@ -11007,6 +11104,10 @@ static void exec_batch_bind_execute(StringInfo input_message)
         default:
             break;
     }
+
+
+    if(MEMORY_TRACKING_QUERY_PEAK)
+        ereport(LOG, (errmsg("execute batch execute %s, peak memory %ld(kb)", psrc->query_string,  (int64)(t_thrd.utils_cxt.peakedBytesInQueryLifeCycle/1024))));
 
     if (save_log_statement_stats) {
         ShowUsage("BATCH BIND MESSAGE STATISTICS");

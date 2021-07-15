@@ -539,6 +539,7 @@ static void CopyScanFields(const Scan* from, Scan* newnode)
     /* copy remainder of node.*/
     COPY_NODE_FIELD(tablesample);
     CopyMemInfoFields(&from->mem_info, &newnode->mem_info);
+    COPY_SCALAR_FIELD(executeBatch);
 }
 
 /*
@@ -3381,6 +3382,7 @@ static RangeTblEntry* _copyRangeTblEntry(const RangeTblEntry* from)
     COPY_BITMAPSET_FIELD(modifiedCols);
     COPY_BITMAPSET_FIELD(insertedCols);
     COPY_BITMAPSET_FIELD(updatedCols);
+    COPY_BITMAPSET_FIELD(extraUpdatedCols);
     COPY_SCALAR_FIELD(orientation);
     COPY_STRING_FIELD(mainRelName);
     COPY_STRING_FIELD(mainRelNameSpace);
@@ -3816,6 +3818,7 @@ static ColumnDef* _copyColumnDef(const ColumnDef* from)
     COPY_SCALAR_FIELD(storage);
     COPY_SCALAR_FIELD(cmprs_mode);
     COPY_NODE_FIELD(raw_default);
+    COPY_SCALAR_FIELD(generatedCol);
     COPY_NODE_FIELD(cooked_default);
     COPY_NODE_FIELD(collClause);
     COPY_SCALAR_FIELD(collOid);
@@ -4211,6 +4214,9 @@ static Query* _copyQuery(const Query* from)
     COPY_SCALAR_FIELD(use_star_targets);
     COPY_SCALAR_FIELD(is_from_full_join_rewrite);
     COPY_SCALAR_FIELD(uniqueSQLId);
+#ifndef ENABLE_MULTIPLE_NODES
+    COPY_STRING_FIELD(unique_sql_text);
+#endif
     COPY_SCALAR_FIELD(can_push);
     COPY_SCALAR_FIELD(unique_check);
 

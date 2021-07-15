@@ -1450,6 +1450,9 @@ extern Datum substrb_without_lenth(PG_FUNCTION_ARGS);
 /*aes encrypt/decrypt function*/
 extern Datum gs_encrypt_aes128(PG_FUNCTION_ARGS);
 extern Datum gs_decrypt_aes128(PG_FUNCTION_ARGS);
+extern Datum gs_encrypt(PG_FUNCTION_ARGS);
+extern Datum gs_decrypt(PG_FUNCTION_ARGS);
+
 extern ScalarVector* vtimestamp_part(PG_FUNCTION_ARGS);
 extern ScalarVector* vint4mul(PG_FUNCTION_ARGS);
 extern ScalarVector* vint4mi(PG_FUNCTION_ARGS);
@@ -1510,9 +1513,12 @@ extern Datum text_timestamp(PG_FUNCTION_ARGS);
 extern void encryptOBS(char* srcplaintext, char destciphertext[], uint32 destcipherlength);
 extern void decryptOBS(
     const char* srcciphertext, char destplaintext[], uint32 destplainlength, const char* obskey = NULL);
-extern void encryptECString(char* src_plain_text, char* dest_cipher_text, uint32 dest_cipher_length);
-extern void decryptECString(const char* src_cipher_text, char* dest_plain_text, uint32 dest_plain_length);
+extern void encryptECString(char* src_plain_text, char* dest_cipher_text, uint32 dest_cipher_length, bool isDataSource);
+extern bool decryptECString(const char* src_cipher_text, char* dest_plain_text, uint32 dest_plain_length, bool isDataSource = true);
 extern bool IsECEncryptedString(const char* src_cipher_text);
+extern void EncryptGenericOptions(List* options, const char** sensitiveOptionsArray, int arrayLength, bool isDataSource);
+
+#define EC_CIPHER_TEXT_LENGTH 1024
 
 /* fencedudf.cpp */
 extern Datum fenced_udf_process(PG_FUNCTION_ARGS);

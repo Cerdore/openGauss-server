@@ -154,6 +154,9 @@ extern bool anls_opt_is_on(AnalysisOpt dfx_opt);
     (rt_fetch((relinfo)->ri_RangeTableIndex, (estate)->es_range_table)->insertedCols)
 #define GetUpdatedColumns(relinfo, estate) \
     (rt_fetch((relinfo)->ri_RangeTableIndex, (estate)->es_range_table)->updatedCols)
+#define GET_ALL_UPDATED_COLUMNS(relinfo, estate)                                     \
+    (bms_union(exec_rt_fetch((relinfo)->ri_RangeTableIndex, estate)->updatedCols, \
+        exec_rt_fetch((relinfo)->ri_RangeTableIndex, estate)->extraUpdatedCols))
 
 /* ----------------------------------------------------------------
  * report_iud_time
@@ -314,8 +317,10 @@ void standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 
     old_context = MemoryContextSwitchTo(estate->es_query_cxt);
 
+#ifdef ENABLE_LLVM_COMPILE
     /* Initialize the actual CodeGenObj */
     CodeGenThreadRuntimeSetup();
+#endif
 
     /*
      * Fill in external parameters, if any, from queryDesc; and allocate
@@ -560,6 +565,7 @@ void standard_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long co
      */
     old_context = MemoryContextSwitchTo(estate->es_query_cxt);
 
+#ifdef ENABLE_LLVM_COMPILE
     /*
      * Generate machine code for this query.
      */
@@ -572,6 +578,7 @@ void standard_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, long co
             CodeGenThreadRuntimeCodeGenerate();
         }
     }
+#endif
 
     /* Allow instrumentation of Executor overall runtime */
     if (queryDesc->totaltime) {
@@ -782,9 +789,11 @@ void standard_ExecutorEnd(QueryDesc *queryDesc)
     UnregisterSnapshot(estate->es_snapshot);
     UnregisterSnapshot(estate->es_crosscheck_snapshot);
 
+#ifdef ENABLE_LLVM_COMPILE
     if (!t_thrd.codegen_cxt.g_runningInFmgr) {
         CodeGenThreadTearDown();
     }
+#endif
 
     /*
      * Must switch out of context before destroying it
@@ -1727,6 +1736,7 @@ void InitResultRelInfo(ResultRelInfo *resultRelInfo, Relation resultRelationDesc
     }
     resultRelInfo->ri_FdwState = NULL;
     resultRelInfo->ri_ConstraintExprs = NULL;
+    resultRelInfo->ri_GeneratedExprs = NULL;
     resultRelInfo->ri_junkFilter = NULL;
     resultRelInfo->ri_projectReturning = NULL;
     resultRelInfo->ri_mergeTargetRTI = 0;

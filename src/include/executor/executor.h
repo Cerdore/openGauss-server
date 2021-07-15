@@ -318,6 +318,8 @@ extern ExprContext* CreateExprContext(EState* estate);
 extern ExprContext* CreateStandaloneExprContext(void);
 extern void FreeExprContext(ExprContext* econtext, bool isCommit);
 extern void ReScanExprContext(ExprContext* econtext);
+extern VectorBatch* ExecBatchScan(ScanState* node, ExecScanAccessMtd access_mtd, ExecScanRecheckMtd recheck_mtd);
+extern VectorBatch* ExecBatchSeqScan(SeqScanState* node);
 
 #define ResetExprContext(econtext) MemoryContextReset((econtext)->ecxt_per_tuple_memory)
 
@@ -364,6 +366,11 @@ extern bool ExecRelationIsTargetRelation(EState* estate, Index scanrelid);
 
 extern Relation ExecOpenScanRelation(EState* estate, Index scanrelid);
 extern void ExecCloseScanRelation(Relation scanrel);
+
+static inline RangeTblEntry *exec_rt_fetch(Index rti, EState *estate)
+{
+    return (RangeTblEntry *)list_nth(estate->es_range_table, rti - 1);
+}
 
 extern Partition ExecOpenScanParitition(
     EState* estate, Relation parent, PartitionIdentifier* partID, LOCKMODE lockmode);

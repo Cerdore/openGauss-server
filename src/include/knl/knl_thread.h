@@ -51,6 +51,7 @@
 #include "knl/knl_guc.h"
 #include "knl/knl_session.h"
 #include "nodes/pg_list.h"
+#include "replication/walprotocol.h"
 #include "storage/lock/s_lock.h"
 #include "utils/palloc.h"
 #include "storage/latch.h"
@@ -66,7 +67,7 @@
 #include "pgxc/barrier.h"
 #define MAX_PATH_LEN 1024
 
-#define RESERVE_SIZE 35
+#define RESERVE_SIZE 36
 
 typedef struct ResourceOwnerData* ResourceOwner;
 
@@ -445,10 +446,6 @@ typedef struct knl_t_xlog_context {
     char* recoveryTargetBarrierId;
     char* recoveryTargetName;
     XLogRecPtr recoveryTargetLSN;
-#ifndef ENABLE_MULTIPLE_NODES
-    int recovery_min_apply_delay;
-    TimestampTz recoveryDelayUntilTime;
-#endif
     /* options taken from recovery.conf for XLOG streaming */
     bool StandbyModeRequested;
     char* PrimaryConnInfo;
@@ -1284,6 +1281,7 @@ typedef struct knl_t_interrupt_context {
 
     volatile bool InterruptCountResetFlag;
 
+    volatile bool ignoreBackendSignal;
 } knl_t_interrupt_context;
 
 typedef int64 pg_time_t;
@@ -1644,6 +1642,9 @@ typedef struct knl_t_utils_context {
 
     /* Track memory usage in bytes at individual thread level */
     int64 trackedBytes;
+
+    int64 peakedBytesInQueryLifeCycle;
+    int64 basedBytesInQueryLifeCycle;
 
     /* Per thread/query quota in chunks */
     int32 maxChunksPerThread; /* Will be updated by CostSize */

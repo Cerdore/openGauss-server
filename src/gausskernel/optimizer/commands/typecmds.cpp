@@ -854,7 +854,7 @@ void DefineDomain(CreateDomainStmt* stmt)
                      * Cook the constr->raw_expr into an expression. Note:
                      * name is strictly for error message
                      */
-                    defaultExpr = cookDefault(pstate, constr->raw_expr, basetypeoid, basetypeMod, domainName);
+                    defaultExpr = cookDefault(pstate, constr->raw_expr, basetypeoid, basetypeMod, domainName, 0);
 
                     /*
                      * If the expression is just a NULL constant, we treat it
@@ -2015,8 +2015,8 @@ void AlterDomainDefault(List* names, Node* defaultRaw)
          * Cook the colDef->raw_expr into an expression. Note: Name is
          * strictly for error message
          */
-        defaultExpr = cookDefault(pstate, defaultRaw, typTup->typbasetype, typTup->typtypmod, NameStr(typTup->typname));
-
+        defaultExpr =
+            cookDefault(pstate, defaultRaw, typTup->typbasetype, typTup->typtypmod, NameStr(typTup->typname), 0);
         /*
          * If the expression is just a NULL constant, we treat the command
          * like ALTER ... DROP DEFAULT.  (But see note for same test in
@@ -2216,7 +2216,7 @@ void AlterDomainDropConstraint(List* names, const char* constrName, DropBehavior
     ScanKeyInit(
         &key[0], Anum_pg_constraint_contypid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(HeapTupleGetOid(tup)));
 
-    conscan = systable_beginscan(conrel, ConstraintTypidIndexId, true, SnapshotNow, 1, key);
+    conscan = systable_beginscan(conrel, ConstraintTypidIndexId, true, NULL, 1, key);
 
     /*
      * Scan over the result set, removing any matching entries.
@@ -2394,7 +2394,7 @@ void AlterDomainValidateConstraint(List* names, char* constrName)
      */
     conrel = heap_open(ConstraintRelationId, RowExclusiveLock);
     ScanKeyInit(&key, Anum_pg_constraint_contypid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(domainoid));
-    scan = systable_beginscan(conrel, ConstraintTypidIndexId, true, SnapshotNow, 1, &key);
+    scan = systable_beginscan(conrel, ConstraintTypidIndexId, true, NULL, 1, &key);
 
     while (HeapTupleIsValid(tuple = systable_getnext(scan))) {
         con = (Form_pg_constraint)GETSTRUCT(tuple);
@@ -2558,7 +2558,7 @@ static List* get_rels_with_domain(Oid domainOid, LOCKMODE lockmode)
     ScanKeyInit(&key[0], Anum_pg_depend_refclassid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(TypeRelationId));
     ScanKeyInit(&key[1], Anum_pg_depend_refobjid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(domainOid));
 
-    depScan = systable_beginscan(depRel, DependReferenceIndexId, true, SnapshotNow, 2, key);
+    depScan = systable_beginscan(depRel, DependReferenceIndexId, true, NULL, 2, key);
 
     while (HeapTupleIsValid(depTup = systable_getnext(depScan))) {
         Form_pg_depend pg_depend = (Form_pg_depend)GETSTRUCT(depTup);
@@ -2859,7 +2859,7 @@ List* GetDomainConstraints(Oid typeOid)
         /* Look for CHECK Constraints on this domain */
         ScanKeyInit(&key[0], Anum_pg_constraint_contypid, BTEqualStrategyNumber, F_OIDEQ, ObjectIdGetDatum(typeOid));
 
-        scan = systable_beginscan(conRel, ConstraintTypidIndexId, true, SnapshotNow, 1, key);
+        scan = systable_beginscan(conRel, ConstraintTypidIndexId, true, NULL, 1, key);
 
         while (HeapTupleIsValid(conTup = systable_getnext(scan))) {
             Form_pg_constraint c = (Form_pg_constraint)GETSTRUCT(conTup);

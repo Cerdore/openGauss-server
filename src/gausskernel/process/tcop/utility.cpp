@@ -20,6 +20,7 @@
 
 #include "nodes/print.h"
 
+#include "access/cstore_delta.h"
 #include "access/reloptions.h"
 #include "access/tableam.h"
 #include "access/transam.h"
@@ -508,7 +509,7 @@ static void check_xact_readonly(Node* parse_tree)
  */
 void PreventCommandIfReadOnly(const char* cmd_name)
 {
-    if (u_sess->attr.attr_common.XactReadOnly)
+    if (u_sess->attr.attr_common.XactReadOnly && u_sess->attr.attr_storage.replorigin_sesssion_origin == 0)
         ereport(ERROR,
             (errcode(ERRCODE_READ_ONLY_SQL_TRANSACTION),
                 /* translator: %s is name of a SQL command, eg CREATE */
@@ -2739,14 +2740,14 @@ void standard_ProcessUtility(Node* parse_tree, const char* query_string, ParamLi
             break;
 
         case T_CreateForeignTableStmt:
-#ifdef ENABLE_MULTIPLE_NODES		
+#ifdef ENABLE_MULTIPLE_NODES
             if (!IsInitdb && IS_SINGLE_NODE) {
                 ereport(ERROR,
                     (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
                         errmsg("Current mode does not support FOREIGN table yet"),
                         errdetail("The feature is not currently supported")));
             }
-#endif			
+#endif
             /* fall through */
         case T_CreateStmt: {
 #ifdef PGXC
@@ -2783,12 +2784,11 @@ void standard_ProcessUtility(Node* parse_tree, const char* query_string, ParamLi
 #else
             PreventTransactionChain(is_top_level, "CREATE TABLESPACE");
             CreateTableSpace((CreateTableSpaceStmt*)parse_tree);
-
 #endif
             break;
 
         case T_DropTableSpaceStmt:
-#ifdef PGXC
+#ifdef ENABLE_MULTIPLE_NODES
             if (IS_PGXC_COORDINATOR && !IsConnFromCoord())
                 PreventTransactionChain(is_top_level, "DROP TABLESPACE");
             /* Allow this to be run inside transaction block on remote nodes */
@@ -4608,15 +4608,21 @@ void standard_ProcessUtility(Node* parse_tree, const char* query_string, ParamLi
                 true,                                      /* check_rights */
                 !u_sess->upg_cxt.new_catalog_need_storage, /* skip_build */
                 false);                                    /* quiet */
+            if (RelationIsCUFormatByOid(rel_id) && (stmt->primary || stmt->unique)) {
+                DefineDeltaUniqueIndex(rel_id, stmt, indexRelOid);
+            }
             CreateForeignIndex(stmt, indexRelOid);
 #else
-            DefineIndex(rel_id,
+            Oid indexRelOid = DefineIndex(rel_id,
                 stmt,
                 InvalidOid,                                /* no predefined OID */
                 false,                                     /* is_alter_table */
                 true,                                      /* check_rights */
                 !u_sess->upg_cxt.new_catalog_need_storage, /* skip_build */
                 false);                                    /* quiet */
+            if (RelationIsCUFormatByOid(rel_id) && (stmt->primary || stmt->unique)) {
+                DefineDeltaUniqueIndex(rel_id, stmt, indexRelOid);
+            }
 #endif
             pgstat_report_waitstatus(oldStatus);
 #ifdef PGXC
@@ -9449,7 +9455,9 @@ bool DropExtensionIsSupported(const char* query_string)
 #ifndef ENABLE_MULTIPLE_NODES
     if (strstr(lower_string, "drop") && (strstr(lower_string, "postgis") || strstr(lower_string, "packages") ||
         strstr(lower_string, "mysql_fdw") || strstr(lower_string, "oracle_fdw") ||
-        strstr(lower_string, "postgres_fdw"))) {
+        strstr(lower_string, "postgres_fdw") || strstr(lower_string, "dblink") ||
+        strstr(lower_string, "db_b_parser") || strstr(lower_string, "db_a_parser") ||
+        strstr(lower_string, "db_c_parser") || strstr(lower_string, "db_pg_parser"))) {
 #else
     if (strstr(lower_string, "drop") && (strstr(lower_string, "postgis") || strstr(lower_string, "packages"))) {
 #endif

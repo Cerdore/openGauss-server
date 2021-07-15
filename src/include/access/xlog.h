@@ -151,7 +151,7 @@ typedef struct {
     PGSemaphoreData	sem;
 } WALBufferInitWaitLock;
 
-#define WAL_INSERT_STATUS_ENTRIES 4194304
+#define WAL_INSERT_STATUS_ENTRIES g_instance.attr.attr_storage.wal_insert_status_entries
 #define WAL_NOT_COPIED 0
 #define WAL_COPIED 1
 #define WAL_COPY_SUSPEND (-1)
@@ -473,6 +473,9 @@ void CheckMaxPageFlushLSN(XLogRecPtr reqLsn);
 bool CheckForForceFinishRedoTrigger(TermFileData *term_file);
 
 extern XLogRecPtr XlogRemoveSegPrimary;
+
+void XLogArchiveNotify(const char *xlog);
+extern bool IsValidArchiverStandby(WalSnd* walsnd);
 
 /* File path names (all relative to $PGDATA) */
 #define BACKUP_LABEL_FILE "backup_label"

@@ -263,7 +263,8 @@ static bool isNeedGetLCName = true;
 #define PM_POLL_TIMEOUT_SECOND 20
 #define PM_POLL_TIMEOUT_MINUTE 58*SECS_PER_MINUTE*60*1000000L
 #define CHECK_TIMES 10
-
+#define SIGBUS_MCEERR_AR 4
+#define SIGBUS_MCEERR_AO 5
 static char gaussdb_state_file[MAXPGPATH] = {0};
 
 uint32 noProcLogicTid = 0;
@@ -313,10 +314,6 @@ char g_bbox_dump_path[1024] = {0};
         }                                                                                                   \
     } while (0)
 
-#define WalRcvIsOnline()                                                              \
-    ((g_instance.pid_cxt.WalReceiverPID != 0 && t_thrd.walreceiverfuncs_cxt.WalRcv && \
-        t_thrd.walreceiverfuncs_cxt.WalRcv->isRuning))
-
 #define DataRcvIsOnline()                                                                                         \
     ((IS_DN_DUMMY_STANDYS_MODE() ? (g_instance.pid_cxt.DataReceiverPID != 0 && t_thrd.datareceiver_cxt.DataRcv && \
                                        t_thrd.datareceiver_cxt.DataRcv->isRuning)                                 \
@@ -337,6 +334,7 @@ static Port* ConnCreateToRecvGssock(pollfd* ufds, int idx, int* nSockets);
 static Port* ConnCreate(int serverFd);
 static void reset_shared(int port);
 static void SIGHUP_handler(SIGNAL_ARGS);
+void SIGBUS_handler(SIGNAL_ARGS);
 static void pmdie(SIGNAL_ARGS);
 static void startup_alarm(SIGNAL_ARGS);
 static void SetWalsndsNodeState(ClusterNodeState requester, ClusterNodeState others);
@@ -1051,10 +1049,12 @@ int PostmasterMain(int argc, char* argv[])
     cJSON_Hooks hooks = {cJSON_internal_malloc, cJSON_internal_free};
     cJSON_InitHooks(&hooks);
 
+#ifdef ENABLE_LLVM_COMPILE
     /*
      * Prepare codegen enviroment.
      */
     CodeGenProcessInitialize();
+#endif
 
     /* Initialize paths to installation files */
     getInstallationPaths(argv[0]);
@@ -1387,6 +1387,8 @@ int PostmasterMain(int argc, char* argv[])
         puts(GetConfigOption(output_config_variable, false, false));
         ExitPostmaster(0);
     }
+
+    InitializeNumLwLockPartitions();
 
     noProcLogicTid = GLOBAL_ALL_PROCS;
 
@@ -2785,14 +2787,9 @@ static int ServerLoop(void)
         }
 
         /* If we have lost the archiver, try to start a new one */
-        if (XLogArchivingActive() && g_instance.pid_cxt.PgArchPID == 0 && !dummyStandbyMode){
-            if (pmState == PM_RUN) {
+        if (XLogArchivingActive() && g_instance.pid_cxt.PgArchPID == 0 && !dummyStandbyMode) {
+            if (pmState == PM_RUN || pmState == PM_HOT_STANDBY || pmState == PM_RECOVERY) {
                 g_instance.pid_cxt.PgArchPID = pgarch_start();
-            } else if (pmState == PM_HOT_STANDBY) {
-                obs_slot = getObsReplicationSlot();
-                if (obs_slot != NULL) {
-                    g_instance.pid_cxt.PgArchPID = pgarch_start();
-                }
             }
         }
 
@@ -3245,6 +3242,12 @@ int ProcessStartupPacket(Port* port, bool SSLdone)
 #endif
                 }
             } else if (strcmp(nameptr, "replication") == 0) {
+                if (IsLocalPort(u_sess->proc_cxt.MyProcPort) && g_instance.attr.attr_common.enable_thread_pool) {
+                    ereport(elevel,
+                        (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                            errmsg("replication should connect HA port in thread_pool")));
+                }
+                    
                 /*
                  * Due to backward compatibility concerns the replication
                  * parameter is a hybrid beast which allows the value to be
@@ -4047,6 +4050,7 @@ static void SIGHUP_handler(SIGNAL_ARGS)
         (void)SignalChildren(SIGHUP);
         if (ENABLE_THREAD_POOL) {
             g_threadPoolControler->GetSessionCtrl()->SigHupHandler();
+            g_threadPoolControler->GetScheduler()->SigHupHandler();
         }
 
         if (g_instance.pid_cxt.StartupPID != 0)
@@ -4254,6 +4258,65 @@ static void SIGHUP_handler(SIGNAL_ARGS)
 
     errno = save_errno;
 }
+/*
+ * SIGBUS -- When uce failure occurs in system memory, sigbus_handler will exit according to the region
+   of its logical address.
+   1. Calculate the buffer pool address range to determine whether the error address is in the buffer pool.
+   2. For addresses outside the buffer pool range, print the NIC log and exit
+   3. For addresses within the buffer pool range, calculate block_id and judge whether the page is dirty
+   4. If the page is not dirty, execute pmdie to exit normally and print warning message. If the page is dirty,
+      print the PANIC log and exit
+ */
+void SIGBUS_handler(SIGNAL_ARGS)
+{
+    uint64 buffer_size;
+    int buf_id;
+    int si_code = g_instance.sigbus_cxt.sigbus_code;
+    unsigned long long sigbus_addr = (unsigned long long)g_instance.sigbus_cxt.sigbus_addr;
+    if (si_code != SIGBUS_MCEERR_AR && si_code != SIGBUS_MCEERR_AO) {
+        ereport(PANIC, 
+            (errcode(ERRCODE_UE_COMMON_ERROR),
+                errmsg("errcode:%u, SIGBUS signal received, Gaussdb will shut down immediately",
+                    ERRCODE_UE_COMMON_ERROR)));
+    }
+#ifdef __aarch64__
+    buffer_size = g_instance.attr.attr_storage.NBuffers * (Size)BLCKSZ + PG_CACHE_LINE_SIZE;
+#else
+    buffer_size = g_instance.attr.attr_storage.NBuffers * (Size)BLCKSZ;
+#endif
+    unsigned long long startaddr = (unsigned long long)t_thrd.storage_cxt.BufferBlocks;
+    unsigned long long endaddr = startaddr + buffer_size;
+    /* Determine the range of address carried by sigbus, And print the log according to the page state. */
+    if (sigbus_addr >= startaddr && sigbus_addr <= endaddr) {
+        buf_id = floor((sigbus_addr - startaddr) / (Size)BLCKSZ);
+        BufferDesc* buf_desc = GetBufferDescriptor(buf_id);
+        if (buf_desc->state & BM_DIRTY || buf_desc->state & BM_JUST_DIRTIED || buf_desc->state & BM_CHECKPOINT_NEEDED ||
+            buf_desc->state & BM_IO_IN_PROGRESS) {
+            ereport(PANIC,
+                (errcode(ERRCODE_UE_DIRTY_PAGE), 
+                    errmsg("errcode:%u, Uncorrected Error occurred at dirty page. The error address is: 0x%llx. Gaussdb will shut "
+                           "down immediately.",
+                    ERRCODE_UE_DIRTY_PAGE, sigbus_addr)));
+        } else {
+            ereport(WARNING,
+                (errcode(ERRCODE_UE_CLEAN_PAGE),
+                    errmsg("errcode:%u, Uncorrected Error occurred at clean/free page. The error address is: 0x%llx. GaussDB will "
+                           "shutdown.", 
+                        ERRCODE_UE_CLEAN_PAGE, sigbus_addr)));
+            pmdie(SIGBUS);
+        }
+    } else if (sigbus_addr == 0) {
+        ereport(PANIC, 
+            (errcode(ERRCODE_UE_COMMON_ERROR), 
+                errmsg("errcode:%u, SIGBUS signal received, sigbus_addr is None. Gaussdb will shut down immediately",
+                    ERRCODE_UE_COMMON_ERROR)));
+    } else {
+        ereport(PANIC,
+            (errcode(ERRCODE_UE_COMMON_ERROR), 
+                errmsg("errcode:%u, SIGBUS signal received. The error address is: 0x%llx, Gaussdb will shut down immediately", 
+                    ERRCODE_UE_COMMON_ERROR, sigbus_addr)));
+    }
+}
 
 void KillGraceThreads(void)
 {
@@ -4294,6 +4357,7 @@ static void pmdie(SIGNAL_ARGS)
     switch (postgres_signal_arg) {
         case SIGTERM:
         case SIGINT:
+        case SIGBUS:
 
             if (STANDBY_MODE == t_thrd.postmaster_cxt.HaShmData->current_mode && !dummyStandbyMode &&
                 SIGTERM == postgres_signal_arg) {
@@ -4863,7 +4927,6 @@ static void reaper(SIGNAL_ARGS)
 #define LOOPHEADER() (exitstatus = (long)(intptr_t)status)
 
     gs_signal_setmask(&t_thrd.libpq_cxt.BlockSig, NULL);
-    ReplicationSlot *obs_slot = NULL;
     ereport(DEBUG4, (errmsg_internal("reaping dead processes")));
 
     for (;;) {
@@ -5409,13 +5472,8 @@ static void reaper(SIGNAL_ARGS)
                 LogChildExit(LOG, _("archiver process"), pid, exitstatus);
 
             if (XLogArchivingActive()) {
-                if (pmState == PM_RUN) {
+                if (pmState == PM_RUN || pmState == PM_HOT_STANDBY || pmState == PM_RECOVERY) {
                     g_instance.pid_cxt.PgArchPID = pgarch_start();
-                }else if (pmState == PM_HOT_STANDBY) {
-                    obs_slot = getObsReplicationSlot();
-                    if (obs_slot != NULL) {
-                        g_instance.pid_cxt.PgArchPID = pgarch_start();
-                    }
                 }
             }
             continue;
@@ -7026,7 +7084,9 @@ void ExitPostmaster(int status)
     TermMOT();   /* shutdown memory engine before codegen is destroyed */
 #endif
 
+#ifdef ENABLE_LLVM_COMPILE
     CodeGenProcessTearDown();
+#endif
 
     /* Save llt data to disk before postmaster exit */
 #ifdef ENABLE_LLT

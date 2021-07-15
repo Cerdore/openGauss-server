@@ -623,10 +623,14 @@ bool SyncRepGetSyncRecPtr(XLogRecPtr *receivePtr, XLogRecPtr *writePtr, XLogRecP
      * or there are not enough synchronous standbys.
      * but in a particular scenario, when most_available_sync is true, primary only wait the alive sync standbys
      * if list_length(sync_standbys) doesn't satisfy t_thrd.syncrep_cxt.SyncRepConfig->num_sync.
+     * 
+     * All synchronous standbys are allowed to disconnect from the host
+     * only when the maximum available mode is on
      */
     if ((!(*am_sync) && check_am_sync) || t_thrd.syncrep_cxt.SyncRepConfig == NULL ||
         (!t_thrd.walsender_cxt.WalSndCtl->most_available_sync &&
-        list_length(sync_standbys) < t_thrd.syncrep_cxt.SyncRepConfig->num_sync)) {
+            list_length(sync_standbys) < t_thrd.syncrep_cxt.SyncRepConfig->num_sync) ||
+        (t_thrd.walsender_cxt.WalSndCtl->most_available_sync && list_length(sync_standbys) == 0)) {
         list_free(sync_standbys);
         return false;
     }
@@ -1469,12 +1473,9 @@ bool check_synchronous_standby_names(char **newval, void **extra, GucSource sour
         int parse_rc;
         SyncRepConfigData *pconf = NULL;
         syncrep_scanner_yyscan_t yyscanner;
-        char* nodenameList = NULL;
-        char* az1 = g_instance.attr.attr_storage.available_zone;
         char* data_dir = t_thrd.proc_cxt.DataDir;
         uint32 idx;
         char* p = NULL;
-        int resultStatus;
 
         /* Reset communication variables to ensure a fresh start */
         t_thrd.syncrepgram_cxt.syncrep_parse_result = NULL;
@@ -1523,22 +1524,13 @@ bool check_synchronous_standby_names(char **newval, void **extra, GucSource sour
         }
         g_local_node_name = g_node[g_local_node_idx].nodeName;
 
-        resultStatus = get_nodename_list_by_AZ(az1, data_dir, &nodenameList);
-        if (nodenameList == NULL) {
-            return false;
-        }
-
         p = pconf->member_names;
         for (int i = 1; i <= pconf->nmembers; i++) {
-            if (!contain_nodename(nodenameList, p)) {
-                // The value of pamameter synchronous_standby_names is incorrect.
-                free(nodenameList);
+            if (!CheckDataNameValue(p, data_dir)) {
                 return false;
             }
             p += strlen(p) + 1;
         }
-
-        free(nodenameList);
 
 pass:
         *extra = (void *)pconf;

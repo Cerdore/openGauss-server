@@ -835,6 +835,34 @@ AttrNumber get_attnum(Oid relid, const char* attname)
 }
 
 /*
+ * GetGenerated
+ *
+ *        Given the relation id and the attribute number,
+ *        return the "generated" field from the attrdef relation.
+ *
+ *        Errors if not found.
+ *
+ *        Since not generated is represented by '\0', this can also be used as a
+ *        Boolean test.
+ */
+char GetGenerated(Oid relid, AttrNumber attnum)
+{
+    char        result = '\0';
+    Relation    relation;
+    TupleDesc   tupdesc;
+
+    /* Assume we already have adequate lock */
+    relation = heap_open(relid, NoLock);
+
+    tupdesc = RelationGetDescr(relation);
+    result = GetGeneratedCol(tupdesc, attnum - 1);
+
+    heap_close(relation, NoLock);
+
+    return result;
+}
+
+/*
  * get_atttype
  *
  *		Given the relation OID and the attribute number with the relation,
@@ -3341,7 +3369,7 @@ static List* GetAllSliceTuples(Relation pgxcSliceRel, Oid tableOid)
         F_OIDEQ, ObjectIdGetDatum(tableOid));
     ScanKeyInit(&skey[1], Anum_pgxc_slice_type, BTEqualStrategyNumber,
         F_CHAREQ, CharGetDatum(PGXC_SLICE_TYPE_SLICE));
-    sliceScan = systable_beginscan(pgxcSliceRel, PgxcSliceOrderIndexId, true, SnapshotNow, 2, skey);
+    sliceScan = systable_beginscan(pgxcSliceRel, PgxcSliceOrderIndexId, true, NULL, 2, skey);
     while (HeapTupleIsValid((htup = systable_getnext(sliceScan)))) {
         dtup = heap_copytuple(htup);
         sliceList = lappend(sliceList, dtup);

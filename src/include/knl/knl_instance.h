@@ -69,7 +69,10 @@
 const int NUM_PERCENTILE_COUNT = 2;
 const int INIT_NUMA_ALLOC_COUNT = 32;
 const int HOTKEY_ABANDON_LENGTH = 100;
-const int MAX_GLOBAL_CACHEMEM_NUM = 8;
+const int MAX_GLOBAL_CACHEMEM_NUM = 128;
+#ifndef ENABLE_MULTIPLE_NODES
+const int DB_CMPT_MAX = 4;
+#endif
 
 enum knl_virtual_role {
     VUNKNOWN = 0,
@@ -698,6 +701,7 @@ typedef struct knl_g_wal_context {
     volatile bool isWalWriterSleeping;
     pthread_mutex_t criticalEntryMutex;
     pthread_cond_t criticalEntryCV;
+    pthread_condattr_t criticalEntryAtt;
     volatile uint32 walWaitFlushCount; /* only for xlog statistics use */
     volatile XLogSegNo globalEndPosSegNo; /* Global variable for init xlog segment files. */
     int lastWalStatusEntryFlushed;
@@ -733,6 +737,26 @@ typedef struct knl_g_archive_obs_context {
     int sync_walsender_term;
 } knl_g_archive_obs_context;
 
+typedef struct knl_g_archive_standby_context {
+    /*
+     * walreceiver set when get task from walsender
+     * 0 for no task
+     * 1 walreceive get task from walsender and set it for archive thread
+     * 2 archive thread set when task is done
+     */
+    volatile unsigned int arch_task_status;
+
+    /* archive thread set when archive done*/
+    bool arch_finish_result;
+
+    /* for standby */
+    ArchiveXlogMessage archive_task;
+    bool need_to_send_archive_status;
+    bool archive_enabled;
+    XLogRecPtr standby_archive_start_point;
+    Latch* arch_latch;
+} knl_g_archive_standby_context;
+
 #ifdef ENABLE_MOT
 typedef struct knl_g_mot_context {
     JitExec::JitExecMode jitExecMode;
@@ -743,6 +767,11 @@ typedef struct knl_g_hypo_context {
     MemoryContext HypopgContext;
     List* hypo_index_list;
 } knl_g_hypo_context;
+
+typedef struct knl_sigbus_context {
+    void* sigbus_addr;
+    int sigbus_code;
+} knl_sigbus_context;
 
 typedef struct knl_instance_context {
     knl_virtual_role role;
@@ -838,8 +867,15 @@ typedef struct knl_instance_context {
     knl_g_barrier_creator_context barrier_creator_cxt;
     knl_g_oid_nodename_mapping_cache oid_nodename_cache;
     knl_g_archive_obs_context archive_obs_cxt;
+    knl_g_archive_standby_context archive_standby_cxt;
     struct HTAB* ngroup_hash_table;
     knl_g_hypo_context hypo_cxt;
+    knl_sigbus_context sigbus_cxt;
+
+#ifndef ENABLE_MULTIPLE_NODES
+    void *raw_parser_hook[DB_CMPT_MAX];
+    void *plsql_parser_hook[DB_CMPT_MAX];
+#endif
 } knl_instance_context;
 
 extern long random();
@@ -866,7 +902,8 @@ extern void add_numa_alloc_info(void* numaAddr, size_t length);
 #define ATOMIC_TRUE                     1
 #define ATOMIC_FALSE                    0
 
-#define GLOBAL_PLANCACHE_MEMCONTEXT  (g_instance.cache_cxt.global_plancache_mem[random() % MAX_GLOBAL_CACHEMEM_NUM])
+#define GLOBAL_PLANCACHE_MEMCONTEXT \
+    (g_instance.cache_cxt.global_plancache_mem[u_sess->session_id % MAX_GLOBAL_CACHEMEM_NUM])
 
 #endif /* SRC_INCLUDE_KNL_KNL_INSTANCE_H_ */
 

@@ -532,9 +532,9 @@ static void XLogFlushCore(XLogRecPtr WriteRqstPtr);
 static void XLogSelfFlush(void);
 static void XLogSelfFlushWithoutStatus(int numHitsOnStartPage, XLogRecPtr CurrPos, int currLRC);
 
-static void XLogArchiveNotify(const char *xlog);
 static void XLogArchiveNotifySeg(XLogSegNo segno);
 static bool XLogArchiveCheckDone(const char *xlog);
+static bool HasBeenArchivedOnHaMode(const char* xlog);
 static bool XLogArchiveIsBusy(const char *xlog);
 static bool XLogArchiveIsReady(const char *xlog);
 static void XLogArchiveCleanup(const char *xlog);
@@ -2325,7 +2325,7 @@ static uint64 XLogRecPtrToBytePos(XLogRecPtr ptr)
  * and the archiver then knows to archive XLOGDIR/0000000100000001000000C6,
  * then when complete, rename it to 0000000100000001000000C6.done
  */
-static void XLogArchiveNotify(const char *xlog)
+void XLogArchiveNotify(const char *xlog)
 {
     char archiveStatusPath[MAXPGPATH];
     FILE *fd = NULL;
@@ -2436,6 +2436,14 @@ static bool XLogArchiveCheckDone(const char *xlog)
     struct stat stat_buf;
     errno_t errorno = EOK;
 
+    /* Only the primary need this step to check this xlog has been archived on standby.
+     * If this xlog has been archived by all standby which start up the archive thread,
+     * we should check weather the primary (if primary start up the archive s)
+     */
+    if (!HasBeenArchivedOnHaMode(xlog)) {
+        return false;
+    }
+
     /* Always deletable if archiving is off or in recovery process. Archiving is always disabled on standbys. */
     if (!XLogArchivingActive() || RecoveryInProgress()) {
         return true;
@@ -2465,6 +2473,67 @@ static bool XLogArchiveCheckDone(const char *xlog)
     /* Retry creation of the .ready file */
     XLogArchiveNotify(xlog);
     return false;
+}
+
+static bool HasBeenArchivedOnHaMode(const char* xlog)
+{
+    /*
+     * Generally, the validity of the xlog transferred from the upper layer has been verified.
+     * Therefore, if the length of the xlog name transferred is greater than the standard length
+     * of the xlog name (24 characters), the transferred file is a .backup file.
+     * Therefore, if the xlog name contains more than 24 characters, return true.
+     */
+    if (strlen(xlog) > XLOG_NAME_LENGTH) {
+        return true;
+    }
+
+    load_server_mode();
+    int mode = t_thrd.xlog_cxt.server_mode;
+    XLogRecPtr minium_lsn = PG_UINT64_MAX;
+
+    for (int i = 0; mode == PRIMARY_MODE && i < g_instance.attr.attr_storage.max_wal_senders; i++) {
+        /* use volatile pointer to prevent code rearrangement */
+        volatile WalSnd* walsnd = &t_thrd.walsender_cxt.WalSndCtl->walsnds[i];
+        if (walsnd == NULL) {
+            continue;
+        }
+
+        SpinLockAcquire(&walsnd->mutex);
+        if (IsValidArchiverStandby((WalSnd*)walsnd) &&
+            walsnd->arch_task_last_lsn != 0 && walsnd->arch_task_last_lsn < minium_lsn) {
+            minium_lsn = walsnd->arch_task_last_lsn;
+        }
+        SpinLockRelease(&walsnd->mutex);
+    }
+
+    if (mode == STANDBY_MODE && XLogArchivingActive()) {
+        XLogRecPtr target_lsn = g_instance.archive_standby_cxt.archive_task.targetLsn;
+        XLogRecPtr start_point = g_instance.archive_standby_cxt.standby_archive_start_point;
+        minium_lsn = (target_lsn == 0) ? start_point : target_lsn;
+    }
+
+    if (minium_lsn == PG_UINT64_MAX) {
+        return true;
+    }
+    char minium_archived_xlog_name[MAXFNAMELEN];
+    XLogSegNo xlogSegno = 0;
+    XLByteToSeg(minium_lsn, xlogSegno);
+    XLogFileName(minium_archived_xlog_name, DEFAULT_TIMELINE_ID, xlogSegno);
+
+    if (mode == STANDBY_MODE) {
+        /* 
+         * targetLsn or start_point may be the xlog to be archived. Therefore,
+         * the value of targetLsn or start_point must be smaller than minium_archived_xlog_name
+         * to ensure that the xlog has been archived.
+         */
+        return strcmp(xlog, minium_archived_xlog_name) < 0;
+    }
+
+    /*
+     * if the input xlog name is smaller than or equal to the minium_archived_xlog_name,
+     * we can confirm that the xlog has been archived by all standby nodes.
+     */
+    return strcmp(xlog, minium_archived_xlog_name) <= 0;
 }
 
 /*
@@ -6580,6 +6649,27 @@ bool check_wal_buffers(int *newval, void **extra, GucSource source)
 }
 
 /*
+ * GUC check_hook for wal_insert_status_entries
+ */
+bool check_wal_insert_status_entries(int *newval, void **extra, GucSource source)
+{
+    // if newval not power of 2
+    if (!((*newval != 0) && ((*newval & (*newval - 1)) == 0))) {
+        // get next Power Of 2 form newval
+        unsigned count = 0;
+        unsigned n = *newval;
+        while( n != 0)
+        {
+            n >>= 1;
+            count += 1;
+        }
+        *newval = 1 << count;
+    }
+
+    return true;
+}
+
+/*
  * Initialization of shared memory for XLOG
  */
 Size XLOGShmemSize(void)
@@ -7756,7 +7846,7 @@ static bool RecoveryApplyDelay(const XLogReaderState *record)
     long waitTime = 0;
 
     /* nothing to do if no delay configured */
-    if (t_thrd.xlog_cxt.recovery_min_apply_delay <= 0) {
+    if (u_sess->attr.attr_storage.recovery_min_apply_delay <= 0) {
         return false;
     }
 
@@ -7797,11 +7887,11 @@ static bool RecoveryApplyDelay(const XLogReaderState *record)
         return false;
     }
     
-    t_thrd.xlog_cxt.recoveryDelayUntilTime =
-        TimestampTzPlusMilliseconds(xtime, t_thrd.xlog_cxt.recovery_min_apply_delay);
+    u_sess->attr.attr_storage.recoveryDelayUntilTime =
+        TimestampTzPlusMilliseconds(xtime, u_sess->attr.attr_storage.recovery_min_apply_delay);
     
     /* Exit without arming the latch if it's already past time to apply this record */
-    TimestampDifference(GetCurrentTimestamp(), t_thrd.xlog_cxt.recoveryDelayUntilTime, &secs, &microsecs);
+    TimestampDifference(GetCurrentTimestamp(), u_sess->attr.attr_storage.recoveryDelayUntilTime, &secs, &microsecs);
     if (secs <= 0 && microsecs <= 0) {
         return false;
     }
@@ -7817,7 +7907,7 @@ static bool RecoveryApplyDelay(const XLogReaderState *record)
         }
 
         /* Wait for difference between GetCurrentTimestamp() and recoveryDelayUntilTime */
-        TimestampDifference(GetCurrentTimestamp(), t_thrd.xlog_cxt.recoveryDelayUntilTime,
+        TimestampDifference(GetCurrentTimestamp(), u_sess->attr.attr_storage.recoveryDelayUntilTime,
                             &secs, &microsecs);
 
         /* To clear LSNMarker item that has not been processed  in  pageworker */
@@ -16562,17 +16652,20 @@ bool CheckFinishRedoSignal(void)
 
 extreme_rto::Enum_TriggeredState CheckForSatartupStatus(void)
 {
-    if (CheckForPrimaryTrigger()) {
-        /* update flag */
+    if (t_thrd.startup_cxt.primary_triggered) {
+        ereport(LOG, (errmsg("received primary request")));
+        ResetPrimaryTriggered();
         return extreme_rto::TRIGGER_PRIMARY;
     }
-    if (CheckForStandbyTrigger()) {
+    if (t_thrd.startup_cxt.standby_triggered) {
+        ereport(LOG, (errmsg("received standby request")));
+        ResetStandbyTriggered();
         return extreme_rto::TRIGGER_STADNBY;
     }
-    if (IsFailoverTriggered()) {
+    if (t_thrd.startup_cxt.failover_triggered) {
         return extreme_rto::TRIGGER_FAILOVER;
     }
-    if (IsSwitchoverTriggered()) {
+    if (t_thrd.startup_cxt.switchover_triggered) {
         return extreme_rto::TRIGGER_FAILOVER;
     }
     return extreme_rto::TRIGGER_NORMAL;
@@ -17605,5 +17698,19 @@ void ExtremRtoUpdateMinCheckpoint()
 {
     if (t_thrd.shemem_ptr_cxt.XLogCtl->IsRecoveryDone && t_thrd.xlog_cxt.minRecoveryPoint == InvalidXLogRecPtr) {
         t_thrd.xlog_cxt.minRecoveryPoint = t_thrd.shemem_ptr_cxt.ControlFile->minRecoveryPoint;
+    }
+}
+
+/* IsArchiverOnStandby */
+extern bool IsValidArchiverStandby(WalSnd* walsnd)
+{
+    if (walsnd == NULL) {
+        return false;
+    }
+    if (walsnd->pid != 0 && ((walsnd->sendRole & SNDROLE_PRIMARY_STANDBY) == walsnd->sendRole) &&
+        walsnd->is_start_archive) {
+        return true;
+    } else {
+        return false;
     }
 }

@@ -53,6 +53,7 @@ extern const uint32 PRIVS_VERSION_NUM;
 extern const uint32 ML_OPT_MODEL_VERSION_NUM;
 extern const uint32 RANGE_LIST_DISTRIBUTION_VERSION_NUM;
 extern const uint32 FIX_SQL_ADD_RELATION_REF_COUNT;
+extern const uint32 GENERATED_COL_VERSION_NUM;
 
 #define INPLACE_UPGRADE_PRECOMMIT_VERSION 1
 
@@ -285,6 +286,10 @@ extern bool in_logic_cluster();
 extern bool exist_logic_cluster();
 #ifdef ENABLE_MULTIPLE_NODES
 extern const char* show_nodegroup_mode(void);
+#endif
+
+#ifndef ENABLE_MULTIPLE_NODES
+extern const int GetCustomParserId();
 #endif
 extern const char* show_lcgroup_name();
 extern Oid get_pgxc_logic_groupoid(Oid roleid);

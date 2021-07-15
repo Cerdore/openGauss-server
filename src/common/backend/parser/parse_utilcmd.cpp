@@ -97,44 +97,6 @@
 #include "client_logic/client_logic_enums.h"
 #include "storage/checksum_impl.h"
 
-/* State shared by transformCreateStmt and its subroutines */
-typedef struct {
-    ParseState* pstate;             /* overall parser state */
-    const char* stmtType;           /* "CREATE [FOREIGN] TABLE" or "ALTER TABLE" */
-    RangeVar* relation;             /* relation to create */
-    Relation rel;                   /* opened/locked rel, if ALTER */
-    List* inhRelations;             /* relations to inherit from */
-    bool isalter;                   /* true if altering existing table */
-    bool ispartitioned;             /* true if it is for a partitioned table */
-    bool hasoids;                   /* does relation have an OID column? */
-    bool canInfomationalConstraint; /* If the value id true, it means that we can build informational constraint. */
-    List* columns;                  /* ColumnDef items */
-    List* ckconstraints;            /* CHECK constraints */
-    List* clusterConstraints;       /* PARTIAL CLUSTER KEY constraints */
-    List* fkconstraints;            /* FOREIGN KEY constraints */
-    List* ixconstraints;            /* index-creating constraints */
-    List* inh_indexes;              /* cloned indexes from INCLUDING INDEXES */
-    List* blist;                    /* "before list" of things to do before creating the table */
-    List* alist;                    /* "after list" of things to do after creating the table */
-    PartitionState* csc_partTableState;
-    List* reloptions;
-    List* partitionKey; /* partitionkey for partiitoned table */
-    IndexStmt* pkey;    /* PRIMARY KEY index, if any */
-#ifdef PGXC
-    List* fallback_dist_col;    /* suggested column to distribute on */
-    DistributeBy* distributeby; /* original distribute by column of CREATE TABLE */
-    PGXCSubCluster* subcluster; /* original subcluster option of CREATE TABLE */
-#endif
-    Node* node; /* @hdfs record a CreateStmt or AlterTableStmt object. */
-    char* internalData;
-
-    List* uuids;     /* used for create sequence */
-    bool isResizing; /* true if the table is resizing */
-    Oid  bucketOid;     /* bucket oid of the resizing table */
-    List *relnodelist;  /* filenode of the resizing table */
-    List *toastnodelist; /* toast node of the resizing table */
-} CreateStmtContext;
-
 /* State shared by transformCreateSchemaStmt and its subroutines */
 typedef struct {
     const char* stmtType; /* "CREATE SCHEMA" or "ALTER SCHEMA" */
@@ -171,8 +133,6 @@ static void transformTableLikePartitionKeys(
 static void transformTableLikePartitionBoundaries(
     Relation relation, List* partKeyPosList, List* partitionList, List** partitionDefinitions);
 static void transformOfType(CreateStmtContext* cxt, TypeName* ofTypename);
-static IndexStmt* generateClonedIndexStmt(
-    CreateStmtContext* cxt, Relation source_idx, const AttrNumber* attmap, int attmap_length, Relation rel);
 static List* get_collation(Oid collation, Oid actual_datatype);
 static List* get_opclass(Oid opclass, Oid actual_datatype);
 static void checkPartitionValue(CreateStmtContext* cxt, CreateStmt* stmt);
@@ -391,6 +351,7 @@ List* transformCreateStmt(CreateStmt* stmt, const char* queryString, const List*
     cxt.bucketOid = InvalidOid;
     cxt.relnodelist = NULL;
     cxt.toastnodelist = NULL;
+    cxt.ofType = (stmt->ofTypename != NULL);
 
     /* We have gen uuids, so use it */
     if (stmt->uuids != NIL)
@@ -812,6 +773,7 @@ static void transformColumnDefinition(CreateStmtContext* cxt, ColumnDef* column,
     bool is_serial = false;
     bool saw_nullable = false;
     bool saw_default = false;
+    bool saw_generated = false;
     Constraint* constraint = NULL;
     ListCell* clist = NULL;
     ClientLogicColumnRef* clientLogicColumnRef = NULL;
@@ -928,6 +890,23 @@ static void transformColumnDefinition(CreateStmtContext* cxt, ColumnDef* column,
                 saw_default = true;
                 break;
 
+            case CONSTR_GENERATED:
+                if (cxt->ofType) {
+                    ereport(ERROR, (errmodule(MOD_GEN_COL), errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                        errmsg("generated columns are not supported on typed tables")));
+                }
+                if (saw_generated) {
+                    ereport(ERROR, (errmodule(MOD_GEN_COL), errcode(ERRCODE_SYNTAX_ERROR),
+                        errmsg("multiple generation clauses specified for column \"%s\" of table \"%s\"",
+                        column->colname, cxt->relation->relname),
+                        parser_errposition(cxt->pstate, constraint->location)));
+                }
+                column->generatedCol = ATTRIBUTE_GENERATED_STORED;
+                column->raw_default = constraint->raw_expr;
+                Assert(constraint->cooked_expr == NULL);
+                saw_generated = true;
+                break;
+
             case CONSTR_CHECK:
                 cxt->ckconstraints = lappend(cxt->ckconstraints, constraint);
                 break;
@@ -986,6 +965,15 @@ static void transformColumnDefinition(CreateStmtContext* cxt, ColumnDef* column,
             transformColumnType(cxt, column);
         }
     }
+
+    if (saw_default && saw_generated)
+            ereport(ERROR,
+                    (errcode(ERRCODE_SYNTAX_ERROR),
+                     errmsg("both default and generation expression specified for column \"%s\" of table \"%s\"",
+                            column->colname, cxt->relation->relname),
+                     parser_errposition(cxt->pstate,
+                                        constraint->location)));
+
     /*
      * Generate ALTER FOREIGN TABLE ALTER COLUMN statement which adds
      * per-column foreign data wrapper options for this column.
@@ -1039,6 +1027,7 @@ static void transformTableConstraint(CreateStmtContext* cxt, Constraint* constra
         case CONSTR_NULL:
         case CONSTR_NOTNULL:
         case CONSTR_DEFAULT:
+        case CONSTR_GENERATED:
         case CONSTR_ATTR_DEFERRABLE:
         case CONSTR_ATTR_NOT_DEFERRABLE:
         case CONSTR_ATTR_DEFERRED:
@@ -1457,12 +1446,26 @@ static void transformTableLikeClause(
                 }
             }
 
-            if (!def->is_serial && (table_like_clause->options & CREATE_TABLE_LIKE_DEFAULTS)) {
+            if (!def->is_serial && (table_like_clause->options & CREATE_TABLE_LIKE_DEFAULTS) &&
+                !GetGeneratedCol(tupleDesc, parent_attno - 1)) {
                 /*
                  * If default expr could contain any vars, we'd need to fix 'em,
                  * but it can't; so default is ready to apply to child.
                  */
                 def->cooked_default = this_default;
+            } else if (!def->is_serial && (table_like_clause->options & CREATE_TABLE_LIKE_GENERATED) &&
+                GetGeneratedCol(tupleDesc, parent_attno - 1)) {
+                bool found_whole_row = false;
+                def->cooked_default =
+                    map_variable_attnos(this_default, 1, 0, attmap, tupleDesc->natts, &found_whole_row);
+                if (found_whole_row) {
+                    ereport(ERROR, (errmodule(MOD_GEN_COL), errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                        errmsg("cannot convert whole-row table reference"),
+                        errdetail(
+                        "Generation expression for column \"%s\" contains a whole-row reference to table \"%s\".",
+                        attributeName, RelationGetRelationName(relation))));
+                }
+                def->generatedCol = GetGeneratedCol(tupleDesc, parent_attno - 1);
             }
         }
 
@@ -2066,6 +2069,7 @@ static void transformOfType(CreateStmtContext* cxt, TypeName* ofTypename)
         n->colname = pstrdup(NameStr(attr->attname));
         n->typname = makeTypeNameFromOid(attr->atttypid, attr->atttypmod);
         n->kvtype = ATT_KV_UNDEFINED;
+        n->generatedCol = '\0';
         n->inhcount = 0;
         n->is_local = true;
         n->is_not_null = false;
@@ -2114,7 +2118,7 @@ char* getTmptableIndexName(const char* srcSchema, const char* srcIndex)
  * Generate an IndexStmt node using information from an already existing index
  * "source_idx".  Attribute numbers should be adjusted according to attmap.
  */
-static IndexStmt* generateClonedIndexStmt(
+IndexStmt* generateClonedIndexStmt(
     CreateStmtContext* cxt, Relation source_idx, const AttrNumber* attmap, int attmap_length, Relation rel)
 {
     Oid source_relid = RelationGetRelid(source_idx);
@@ -2711,7 +2715,8 @@ static void checkConditionForTransformIndex(
      * else dump and reload will produce a different index (breaking
      * pg_upgrade in particular).
      */
-    if (index_rel->rd_rel->relam != get_am_oid(DEFAULT_INDEX_TYPE, false))
+    if (index_rel->rd_rel->relam != get_am_oid(DEFAULT_INDEX_TYPE, false) &&
+        index_rel->rd_rel->relam != get_am_oid(CSTORE_BTREE_INDEX_TYPE, false))
         ereport(ERROR,
             (errcode(ERRCODE_WRONG_OBJECT_TYPE),
                 errmsg("index \"%s\" is not a btree", index_name),
@@ -3821,6 +3826,7 @@ List* transformAlterTableStmt(Oid relid, AlterTableStmt* stmt, const char* query
     cxt.bucketOid = InvalidOid;
     cxt.relnodelist = NULL;
     cxt.toastnodelist = NULL;
+    cxt.ofType = false;
 
     if (RelationIsForeignTable(rel) || RelationIsStream(rel)) {
         cxt.canInfomationalConstraint = CAN_BUILD_INFORMATIONAL_CONSTRAINT_BY_RELID(RelationGetRelid(rel));
@@ -3949,6 +3955,16 @@ List* transformAlterTableStmt(Oid relid, AlterTableStmt* stmt, const char* query
                 break;
 
             case AT_SplitPartition:
+                if (!RELATION_IS_PARTITIONED(rel))
+                    ereport(ERROR,
+                        (errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+                            errmodule(MOD_OPT),
+                            errmsg("can not split partition against NON-PARTITIONED table")));
+                if (rel->partMap->type == PART_TYPE_LIST || rel->partMap->type == PART_TYPE_HASH) {
+                    ereport(ERROR,
+                        (errcode(ERRCODE_WRONG_OBJECT_TYPE), errmsg("can not split LIST/HASH partition table")));
+                }
+
                 /* transform the boundary of range partition: from A_Const into Const */
                 splitDefState = (SplitPartitionState*)cmd->def;
                 if (!PointerIsValid(splitDefState->split_point)) {
@@ -3968,12 +3984,6 @@ List* transformAlterTableStmt(Oid relid, AlterTableStmt* stmt, const char* query
                     Const* lowBound = NULL;
                     Const* upBound = NULL;
                     Oid srcPartOid = InvalidOid;
-
-                    if (!RELATION_IS_PARTITIONED(rel))
-                        ereport(ERROR,
-                            (errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
-                                errmodule(MOD_OPT),
-                                errmsg("can not split partition against NON-PARTITIONED table")));
 
                     /* get partition number */
                     partNum = getNumberOfPartitions(rel);
@@ -5408,6 +5418,7 @@ static void get_src_partition_bound(Relation partTableRel, Oid srcPartOid, Const
                 errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
                 errmsg("CAN NOT get detail info from a partitioned relation WITHOUT specified partition.")));
 
+    Assert(partTableRel->partMap->type == PART_TYPE_RANGE || partTableRel->partMap->type == PART_TYPE_INTERVAL);
     partMap = (RangePartitionMap*)partTableRel->partMap;
 
     srcPartSeq = partOidGetPartSequence(partTableRel, srcPartOid) - 1;
